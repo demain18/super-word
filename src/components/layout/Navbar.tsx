@@ -2,9 +2,12 @@
 
 import styled from '@emotion/styled';
 import { theme } from '@/styles/theme';
+import type { User } from '@supabase/supabase-js';
 
 interface NavbarProps {
   currentStep: 1 | 2 | 3;
+  user: User | null;
+  onSignOut: () => void;
 }
 
 const Nav = styled.nav`
@@ -12,11 +15,88 @@ const Nav = styled.nav`
   height: 60px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 18px;
   position: sticky;
   top: 0;
   z-index: 1000;
   box-shadow: ${theme.shadows.nav};
+`;
+
+const UserMenu = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`;
+
+const UserInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  color: #ffffff;
+
+  &:hover {
+    border-color: #ffffff;
+  }
+`;
+
+const Avatar = styled.img`
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: ${theme.colors.secondaryHover};
+`;
+
+const AvatarFallback = styled.div`
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: ${theme.colors.primary};
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+`;
+
+const UserName = styled.span`
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  @media (max-width: ${theme.breakpoints.mobile}) {
+    display: none;
+  }
+`;
+
+const SignOutButton = styled.button`
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid #565959;
+  border-radius: 3px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color ${theme.transitions.fast}, background ${theme.transitions.fast};
+
+  &:hover {
+    border-color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 3px 2px rgba(228, 121, 17, 0.5);
+  }
 `;
 
 const Logo = styled.div`
@@ -109,13 +189,38 @@ const STEPS = [
   { num: 3, label: '내용 작성' },
 ];
 
-export default function Navbar({ currentStep }: NavbarProps) {
+export default function Navbar({ currentStep, user, onSignOut }: NavbarProps) {
+  const meta = (user?.user_metadata ?? {}) as {
+    full_name?: string;
+    name?: string;
+    avatar_url?: string;
+    picture?: string;
+  };
+  const displayName = meta.full_name || meta.name || user?.email || '';
+  const avatarUrl = meta.avatar_url || meta.picture || '';
+  const initial = (displayName || '?').trim().charAt(0).toUpperCase();
+
   return (
     <>
       <Nav>
         <Logo>
           <LogoAccent>Super</LogoAccent>Word
         </Logo>
+        {user && (
+          <UserMenu>
+            <UserInfo>
+              {avatarUrl ? (
+                <Avatar src={avatarUrl} alt={displayName} referrerPolicy="no-referrer" />
+              ) : (
+                <AvatarFallback>{initial}</AvatarFallback>
+              )}
+              <UserName>{displayName}</UserName>
+            </UserInfo>
+            <SignOutButton type="button" onClick={onSignOut}>
+              로그아웃
+            </SignOutButton>
+          </UserMenu>
+        )}
       </Nav>
       <SubNav>
         {STEPS.map((step, i) => (
