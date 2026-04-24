@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getBalance, listDownloadHistory } from '@/lib/points';
-import { getTossClientKey } from '@/lib/toss-config';
+import { getTossClientKey } from '@/lib/toss-client';
 import PointClient from './PointClient';
 
 export default async function PointPage() {
