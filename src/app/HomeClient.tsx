@@ -10,7 +10,7 @@ import Step2StyleSelect from '@/components/steps/Step2StyleSelect';
 import Step3ContentFill from '@/components/steps/Step3ContentFill';
 import { AppState, ReportType, StyleType, Message, VersionEntry } from '@/types';
 import { createClient } from '@/lib/supabase/client';
-import { getTossClientKey } from '@/lib/toss-config';
+import { getTossClientKey } from '@/lib/toss-client';
 import type { User } from '@supabase/supabase-js';
 
 const AppLayout = styled.div`

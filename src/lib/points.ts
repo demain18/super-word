@@ -34,37 +34,15 @@ export async function chargePoints(
     .eq('order_id', meta.orderId)
     .maybeSingle();
 
-  if (existing) {
-    const balance = await getBalance(userId);
-    return { balance, duplicated: true };
-  }
-
-  await getBalance(userId);
-
-  const { data: row, error: updErr } = await svc
-    .from('points')
-    .select('balance')
-    .eq('user_id', userId)
-    .single();
-  if (updErr) throw updErr;
-
-  const nextBalance = row.balance + amount;
-  const { error: writeErr } = await svc
-    .from('points')
-    .update({ balance: nextBalance, updated_at: new Date().toISOString() })
-    .eq('user_id', userId);
-  if (writeErr) throw writeErr;
-
-  const { error: txErr } = await svc.from('point_transactions').insert({
-    user_id: userId,
-    kind: 'charge',
-    amount,
-    order_id: meta.orderId,
-    payment_key: meta.paymentKey,
+  const { data, error } = await svc.rpc('charge_points', {
+    p_user: userId,
+    p_amount: amount,
+    p_order_id: meta.orderId,
+    p_payment_key: meta.paymentKey,
   });
-  if (txErr) throw txErr;
+  if (error) throw error;
 
-  return { balance: nextBalance, duplicated: false };
+  return { balance: data as number, duplicated: !!existing };
 }
 
 export class InsufficientPointsError extends Error {

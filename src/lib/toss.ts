@@ -1,4 +1,4 @@
-import { DEFAULT_TOSS_SECRET_KEY } from './toss-config';
+import 'server-only';
 
 const TOSS_CONFIRM_URL = 'https://api.tosspayments.com/v1/payments/confirm';
 
@@ -16,12 +16,20 @@ export interface TossConfirmError {
   message: string;
 }
 
+function getTossSecretKey(): string {
+  const key = process.env.TOSS_SECRET_KEY;
+  if (!key) {
+    throw new Error('TOSS_SECRET_KEY is not configured');
+  }
+  return key;
+}
+
 export async function confirmTossPayment(input: {
   paymentKey: string;
   orderId: string;
   amount: number;
 }): Promise<TossConfirmResult> {
-  const secret = process.env.TOSS_SECRET_KEY || DEFAULT_TOSS_SECRET_KEY;
+  const secret = getTossSecretKey();
 
   const authHeader =
     'Basic ' + Buffer.from(`${secret}:`, 'utf-8').toString('base64');
