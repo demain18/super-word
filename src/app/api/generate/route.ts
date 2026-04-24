@@ -5,26 +5,11 @@ import { buildStyleFeedbackPrompt, buildContentFillPrompt, buildCustomFeedbackPr
 import { buildDocument, buildDocumentFromAI, buildDocumentWithReplacements, extractPlaceholders, AIDocumentContent } from '@/lib/docx-builder';
 import { generateTemplatePreviewHtml, generateAIPreviewHtml, generateReplacedPreviewHtml } from '@/lib/html-preview';
 import { ReportType, StyleType } from '@/types';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
 import { randomUUID } from 'crypto';
-import { existsSync } from 'fs';
+import { createClient as createSupabaseServerClient } from '@/lib/supabase/server';
+import { saveReport } from '@/lib/reports';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
-const UPLOAD_DIR = join(process.cwd(), 'public', 'generated');
-
-async function ensureDir(dir: string) {
-  if (!existsSync(dir)) {
-    await mkdir(dir, { recursive: true });
-  }
-}
-
-async function saveVersionedDocx(sessionDir: string, buffer: Buffer, version: number): Promise<string> {
-  const filename = `report_v${version}.docx`;
-  await writeFile(join(sessionDir, filename), buffer);
-  return filename;
-}
 
 function parseAIResponse<T>(responseText: string): T | null {
   try {
@@ -35,27 +20,71 @@ function parseAIResponse<T>(responseText: string): T | null {
   }
 }
 
+function labelForAction(
+  action: string,
+  style?: StyleType
+): string {
+  switch (action) {
+    case 'generate':
+      return '기본 양식';
+    case 'style': {
+      const styleLabels: Record<string, string> = {
+        corporate: '대기업',
+        'global-startup': '스타트업',
+        government: '정부',
+      };
+      return `${styleLabels[style || ''] || ''} 스타일`.trim();
+    }
+    case 'custom-feedback':
+      return '피드백 반영';
+    case 'content':
+      return '내용 작성';
+    default:
+      return '수정';
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { action, reportType, style, styleHistory, customFeedback, userInput, sessionId, version: currentVersion } = body;
 
     const sid = sessionId || randomUUID();
-    const sessionDir = join(UPLOAD_DIR, sid);
-    await ensureDir(sessionDir);
-
     const nextVersion = (currentVersion || 0) + 1;
+    const filename = `report_v${nextVersion}.docx`;
+
+    const persist = async (buffer: Buffer, label: string, styleForRow?: StyleType) => {
+      const row = await saveReport({
+        userId: user.id,
+        sessionId: sid,
+        version: nextVersion,
+        reportType: (reportType as string) ?? null,
+        style: styleForRow ?? null,
+        label,
+        buffer,
+        filename,
+      });
+      return row.id;
+    };
 
     switch (action) {
       case 'generate': {
         const doc = buildDocument(reportType as ReportType);
         const buffer = await Packer.toBuffer(doc);
-        const filename = await saveVersionedDocx(sessionDir, buffer, nextVersion);
+        const reportId = await persist(buffer, labelForAction('generate'));
         const previewHtml = generateTemplatePreviewHtml(reportType as ReportType);
 
         return NextResponse.json({
           sessionId: sid,
-          docxUrl: `/generated/${sid}/${filename}`,
+          reportId,
           previewHtml,
           message: '기본 양식이 생성되었습니다.',
           version: nextVersion,
@@ -68,7 +97,7 @@ export async function POST(req: NextRequest) {
 
         const doc = buildDocument(reportType as ReportType, styleT);
         const buffer = await Packer.toBuffer(doc);
-        const filename = await saveVersionedDocx(sessionDir, buffer, nextVersion);
+        const reportId = await persist(buffer, labelForAction('style', styleT), styleT);
         const previewHtml = generateTemplatePreviewHtml(reportType as ReportType, styleT);
 
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
@@ -78,7 +107,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
           sessionId: sid,
-          docxUrl: `/generated/${sid}/${filename}`,
+          reportId,
           previewHtml,
           message: feedbackMessage,
           version: nextVersion,
@@ -107,12 +136,12 @@ export async function POST(req: NextRequest) {
 
         const doc = buildDocumentFromAI(reportType as ReportType, aiContent, currentStyle);
         const buffer = await Packer.toBuffer(doc);
-        const filename = await saveVersionedDocx(sessionDir, buffer, nextVersion);
+        const reportId = await persist(buffer, labelForAction('custom-feedback'), currentStyle);
         const previewHtml = generateAIPreviewHtml(reportType as ReportType, aiContent, currentStyle);
 
         return NextResponse.json({
           sessionId: sid,
-          docxUrl: `/generated/${sid}/${filename}`,
+          reportId,
           previewHtml,
           message: aiContent.message || '피드백이 반영되었습니다.',
           version: nextVersion,
@@ -139,12 +168,12 @@ export async function POST(req: NextRequest) {
 
         const doc = buildDocumentWithReplacements(reportType as ReportType, currentStyle, parsed.replacements);
         const buffer = await Packer.toBuffer(doc);
-        const filename = await saveVersionedDocx(sessionDir, buffer, nextVersion);
+        const reportId = await persist(buffer, labelForAction('content'), currentStyle);
         const previewHtml = generateReplacedPreviewHtml(reportType as ReportType, currentStyle, parsed.replacements);
 
         return NextResponse.json({
           sessionId: sid,
-          docxUrl: `/generated/${sid}/${filename}`,
+          reportId,
           previewHtml,
           message: parsed.message || '보고서 내용이 작성되었습니다.',
           version: nextVersion,

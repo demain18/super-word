@@ -10,6 +10,7 @@ import Step2StyleSelect from '@/components/steps/Step2StyleSelect';
 import Step3ContentFill from '@/components/steps/Step3ContentFill';
 import { AppState, ReportType, StyleType, Message, VersionEntry } from '@/types';
 import { createClient } from '@/lib/supabase/client';
+import { getTossClientKey } from '@/lib/toss-config';
 import type { User } from '@supabase/supabase-js';
 
 const AppLayout = styled.div`
@@ -68,27 +69,31 @@ const LOADING_MESSAGES = {
 
 type LoadingType = keyof typeof LOADING_MESSAGES;
 
+const DOWNLOAD_COST = 200;
+
 interface HomeClientProps {
   initialUser: User | null;
 }
 
+const initialAppState: AppState = {
+  currentStep: 1,
+  selectedReport: null,
+  selectedStyle: null,
+  styleHistory: [],
+  isLoading: false,
+  loadingMessage: '',
+  messages: [],
+  sessionId: '',
+  versions: [],
+  currentVersionIndex: 0,
+  lockedVersionIndex: null,
+};
+
 export default function HomeClient({ initialUser }: HomeClientProps) {
-  const [state, setState] = useState<AppState>({
-    currentStep: 1,
-    selectedReport: null,
-    selectedStyle: null,
-    styleHistory: [],
-    docxUrl: null,
-    isLoading: false,
-    loadingMessage: '',
-    messages: [],
-    sessionId: '',
-    versions: [],
-    currentVersionIndex: 0,
-    lockedVersionIndex: null,
-  });
+  const [state, setState] = useState<AppState>(initialAppState);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(initialUser);
+  const [points, setPoints] = useState<number | null>(null);
   const isAuthenticated = !!user;
 
   useEffect(() => {
@@ -101,22 +106,25 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
 
   useEffect(() => {
     if (user) return;
-    setState({
-      currentStep: 1,
-      selectedReport: null,
-      selectedStyle: null,
-      styleHistory: [],
-      docxUrl: null,
-      isLoading: false,
-      loadingMessage: '',
-      messages: [],
-      sessionId: '',
-      versions: [],
-      currentVersionIndex: 0,
-      lockedVersionIndex: null,
-    });
+    setState(initialAppState);
     setPreviewHtml(null);
+    setPoints(null);
   }, [user]);
+
+  const refreshPoints = useCallback(async () => {
+    try {
+      const res = await fetch('/api/points');
+      if (!res.ok) return;
+      const data = await res.json();
+      setPoints(data.balance);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) refreshPoints();
+  }, [user, refreshPoints]);
 
   const handleSignIn = useCallback(async () => {
     const supabase = createClient();
@@ -174,7 +182,7 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
 
         const newVersion: VersionEntry = {
           version: data.version,
-          docxUrl: data.docxUrl,
+          reportId: data.reportId,
           previewHtml: data.previewHtml,
           label: getVersionLabel(loadingType, body),
         };
@@ -184,7 +192,6 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
           return {
             ...prev,
             sessionId: data.sessionId,
-            docxUrl: data.docxUrl,
             isLoading: false,
             loadingMessage: '',
             versions: newVersions,
@@ -339,15 +346,81 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
     setState((prev) => ({ ...prev, currentVersionIndex: index }));
   };
 
+  const triggerBlobDownload = useCallback((signedUrl: string, filename: string) => {
+    const a = document.createElement('a');
+    a.href = signedUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, []);
+
+  const openTossForDownload = useCallback(
+    async (reportId: string) => {
+      if (!user) return;
+      const clientKey = getTossClientKey();
+      try {
+        const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
+        const tossPayments = await loadTossPayments(clientKey);
+        const payment = tossPayments.payment({ customerKey: user.id });
+        const orderId = (crypto?.randomUUID?.() ??
+          `order_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+        const nextUrl = `/?autoDownload=${encodeURIComponent(reportId)}`;
+        await payment.requestPayment({
+          method: 'CARD',
+          amount: { currency: 'KRW', value: DOWNLOAD_COST },
+          orderId,
+          orderName: '양식 다운로드 1회',
+          successUrl: `${window.location.origin}/point/payment/success?next=${encodeURIComponent(nextUrl)}`,
+          failUrl: `${window.location.origin}/point/payment/fail`,
+          customerName: user.user_metadata?.full_name || user.email || '회원',
+          card: {
+            useEscrow: false,
+            flowMode: 'DEFAULT',
+            useCardPoint: false,
+            useAppCardOnly: false,
+          },
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '결제 요청 실패';
+        alert(msg);
+      }
+    },
+    [user]
+  );
+
+  const requestDownload = useCallback(
+    async (reportId: string): Promise<boolean> => {
+      try {
+        const res = await fetch('/api/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reportId }),
+        });
+        const data = await res.json();
+        if (res.status === 409 && data.error === 'INSUFFICIENT_POINTS') {
+          setPoints(typeof data.balance === 'number' ? data.balance : points);
+          await openTossForDownload(reportId);
+          return false;
+        }
+        if (!res.ok) {
+          throw new Error(data.error || '다운로드 실패');
+        }
+        triggerBlobDownload(data.signedUrl, data.filename);
+        if (typeof data.balance === 'number') setPoints(data.balance);
+        return true;
+      } catch (e) {
+        alert(e instanceof Error ? e.message : '다운로드에 실패했습니다.');
+        return false;
+      }
+    },
+    [openTossForDownload, points, triggerBlobDownload]
+  );
+
   const handleDownloadVersion = (index: number) => {
     const version = state.versions[index];
-    if (version?.docxUrl) {
-      const link = document.createElement('a');
-      link.href = version.docxUrl;
-      link.download = `report_v${version.version}.docx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    if (version?.reportId) {
+      requestDownload(version.reportId);
     }
   };
 
@@ -355,11 +428,30 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
     handleDownloadVersion(state.currentVersionIndex);
   };
 
+  useEffect(() => {
+    if (!user) return;
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const auto = url.searchParams.get('autoDownload');
+    if (!auto) return;
+    url.searchParams.delete('autoDownload');
+    window.history.replaceState({}, '', url.toString());
+    (async () => {
+      await refreshPoints();
+      await requestDownload(auto);
+    })();
+  }, [user, refreshPoints, requestDownload]);
+
   const isStep3 = state.currentStep === 3;
 
   return (
     <>
-      <Navbar currentStep={state.currentStep} user={user} onSignOut={handleSignOut} />
+      <Navbar
+        currentStep={state.currentStep}
+        user={user}
+        onSignOut={handleSignOut}
+        points={points}
+      />
       <AppLayout>
         <PreviewPanel
           previewHtml={previewHtml}

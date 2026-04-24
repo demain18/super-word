@@ -1,13 +1,15 @@
 'use client';
 
 import styled from '@emotion/styled';
+import { useRouter } from 'next/navigation';
 import { theme } from '@/styles/theme';
 import type { User } from '@supabase/supabase-js';
 
 interface NavbarProps {
-  currentStep: 1 | 2 | 3;
+  currentStep: 1 | 2 | 3 | null;
   user: User | null;
   onSignOut: () => void;
+  points?: number | null;
 }
 
 const Nav = styled.nav`
@@ -76,6 +78,69 @@ const UserName = styled.span`
     display: none;
   }
 `;
+
+const PointBadge = styled.button`
+  background: linear-gradient(135deg, #FFD93D 0%, #FF9F1A 55%, #E47911 100%);
+  color: #1f0f00;
+  border: 1px solid #B86B00;
+  border-radius: 999px;
+  padding: 6px 14px 6px 10px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.15),
+    0 2px 4px rgba(0, 0, 0, 0.25);
+  transition: transform ${theme.transitions.fast}, box-shadow ${theme.transitions.fast};
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.15),
+      0 4px 8px rgba(0, 0, 0, 0.3);
+  }
+  &:active {
+    transform: translateY(0);
+    box-shadow:
+      inset 0 2px 3px rgba(0, 0, 0, 0.25),
+      0 1px 2px rgba(0, 0, 0, 0.2);
+  }
+  &:focus {
+    outline: none;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.6),
+      0 0 0 3px rgba(255, 215, 0, 0.45);
+  }
+`;
+
+const PointCoin = styled.span`
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+  color: #5a2a00;
+  background: radial-gradient(circle at 30% 30%, #FFF3A3 0%, #FFD542 55%, #C98600 100%);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(110, 60, 0, 0.5);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+`;
+
+function formatPoints(n: number): string {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
 
 const SignOutButton = styled.button`
   background: transparent;
@@ -189,7 +254,8 @@ const STEPS = [
   { num: 3, label: '내용 작성' },
 ];
 
-export default function Navbar({ currentStep, user, onSignOut }: NavbarProps) {
+export default function Navbar({ currentStep, user, onSignOut, points }: NavbarProps) {
+  const router = useRouter();
   const meta = (user?.user_metadata ?? {}) as {
     full_name?: string;
     name?: string;
@@ -199,15 +265,20 @@ export default function Navbar({ currentStep, user, onSignOut }: NavbarProps) {
   const displayName = meta.full_name || meta.name || user?.email || '';
   const avatarUrl = meta.avatar_url || meta.picture || '';
   const initial = (displayName || '?').trim().charAt(0).toUpperCase();
+  const showSteps = currentStep !== null;
 
   return (
     <>
       <Nav>
-        <Logo>
+        <Logo onClick={() => router.push('/')}>
           <LogoAccent>Super</LogoAccent>Word
         </Logo>
         {user && (
           <UserMenu>
+            <PointBadge type="button" onClick={() => router.push('/point')} title="포인트 페이지로 이동">
+              <PointCoin aria-hidden>P</PointCoin>
+              {`${formatPoints(typeof points === 'number' ? points : 0)} P`}
+            </PointBadge>
             <UserInfo>
               {avatarUrl ? (
                 <Avatar src={avatarUrl} alt={displayName} referrerPolicy="no-referrer" />
@@ -222,25 +293,27 @@ export default function Navbar({ currentStep, user, onSignOut }: NavbarProps) {
           </UserMenu>
         )}
       </Nav>
-      <SubNav>
-        {STEPS.map((step, i) => (
-          <span key={step.num} style={{ display: 'flex', alignItems: 'center' }}>
-            <Step
-              $active={currentStep === step.num}
-              $completed={currentStep > step.num}
-            >
-              <StepNumber
+      {showSteps && (
+        <SubNav>
+          {STEPS.map((step, i) => (
+            <span key={step.num} style={{ display: 'flex', alignItems: 'center' }}>
+              <Step
                 $active={currentStep === step.num}
-                $completed={currentStep > step.num}
+                $completed={currentStep! > step.num}
               >
-                {currentStep > step.num ? '✓' : step.num}
-              </StepNumber>
-              {step.label}
-            </Step>
-            {i < STEPS.length - 1 && <StepDivider>›</StepDivider>}
-          </span>
-        ))}
-      </SubNav>
+                <StepNumber
+                  $active={currentStep === step.num}
+                  $completed={currentStep! > step.num}
+                >
+                  {currentStep! > step.num ? '✓' : step.num}
+                </StepNumber>
+                {step.label}
+              </Step>
+              {i < STEPS.length - 1 && <StepDivider>›</StepDivider>}
+            </span>
+          ))}
+        </SubNav>
+      )}
     </>
   );
 }

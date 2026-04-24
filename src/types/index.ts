@@ -27,7 +27,7 @@ export interface Message {
 
 export interface VersionEntry {
   version: number;
-  docxUrl: string;
+  reportId: string;
   previewHtml: string;
   label: string;
 }
@@ -37,7 +37,6 @@ export interface AppState {
   selectedReport: ReportType | null;
   selectedStyle: StyleType | null;
   styleHistory: StyleType[];
-  docxUrl: string | null;
   isLoading: boolean;
   loadingMessage: string;
   messages: Message[];
