@@ -1,42 +1,22 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import styled from '@emotion/styled';
 import { theme } from '@/styles/theme';
 import Navbar from '@/components/layout/Navbar';
 import Button from '@/components/common/Button';
 import { createClient } from '@/lib/supabase/client';
+import { PACKAGE_LIST, PACKAGES, type PackageCode } from '@/lib/passes-config';
 import type { User } from '@supabase/supabase-js';
-
-interface HistoryRow {
-  id: string;
-  points_spent: number;
-  created_at: string;
-  report:
-    | {
-        id: string;
-        filename: string;
-        version: number;
-        label: string | null;
-        session_id: string;
-        report_type: string | null;
-      }
-    | Array<{
-        id: string;
-        filename: string;
-        version: number;
-        label: string | null;
-        session_id: string;
-        report_type: string | null;
-      }>
-    | null;
-}
+import type { PassRow, DownloadHistoryRow } from '@/lib/passes';
 
 interface Props {
   user: User;
-  initialBalance: number;
-  initialHistory: HistoryRow[];
+  initialTotalCredits: number;
+  initialPasses: PassRow[];
+  initialHistory: DownloadHistoryRow[];
   tossClientKey: string;
 }
 
@@ -67,14 +47,14 @@ const HeroCard = styled.div`
   }
 `;
 
-const BalanceLabel = styled.div`
+const HeroLabel = styled.div`
   font-size: 13px;
   opacity: 0.75;
   letter-spacing: 0.4px;
   margin-bottom: 6px;
 `;
 
-const BalanceValue = styled.div`
+const HeroValue = styled.div`
   font-size: 38px;
   font-weight: 800;
   color: ${theme.colors.primary};
@@ -83,7 +63,7 @@ const BalanceValue = styled.div`
   gap: 8px;
 `;
 
-const Unit = styled.span`
+const HeroUnit = styled.span`
   font-size: 18px;
   color: #ffffff;
   font-weight: 600;
@@ -104,24 +84,87 @@ const SectionTitle = styled.h2`
   color: ${theme.colors.textPrimary};
 `;
 
-const PresetRow = styled.div`
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+const PackageGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+
+  @media (max-width: ${theme.breakpoints.mobile}) {
+    grid-template-columns: 1fr;
+  }
 `;
 
-const PresetButton = styled.button<{ $active: boolean }>`
-  border: 1px solid ${({ $active }) => ($active ? theme.colors.primary : theme.colors.cardBorder)};
-  background: ${({ $active }) => ($active ? 'rgba(255,153,0,0.08)' : '#ffffff')};
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
+const PackageCard = styled.div<{ $featured?: boolean }>`
+  border: 2px solid ${({ $featured }) => ($featured ? theme.colors.primary : theme.colors.cardBorder)};
+  background: ${({ $featured }) => ($featured ? 'rgba(255,153,0,0.06)' : '#ffffff')};
+  border-radius: 10px;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+`;
+
+const PackageBadge = styled.span`
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  background: ${theme.colors.primary};
+  color: #1f0f00;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 10px;
+`;
+
+const PackageCredits = styled.div`
+  font-size: 22px;
+  font-weight: 800;
   color: ${theme.colors.textPrimary};
-  min-width: 110px;
-  transition: all ${theme.transitions.fast};
-  &:hover { border-color: ${theme.colors.primary}; }
+`;
+
+const PackagePrice = styled.div`
+  font-size: 18px;
+  font-weight: 700;
+  color: ${theme.colors.textPrimary};
+`;
+
+const PackageMeta = styled.div`
+  font-size: 12px;
+  color: ${theme.colors.textSecondary};
+  min-height: 32px;
+`;
+
+const PassList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const PassItem = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid ${theme.colors.cardBorder};
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+`;
+
+const PassMeta = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
+const PassRemainingTxt = styled.span`
+  font-weight: 700;
+  color: ${theme.colors.textPrimary};
+`;
+
+const PassExpiry = styled.span`
+  color: ${theme.colors.textSecondary};
+  font-size: 12px;
 `;
 
 const Table = styled.table`
@@ -153,10 +196,38 @@ const EmptyRow = styled.div`
   font-size: 14px;
 `;
 
-const PRESETS = [1000, 5000, 10000];
+const NoticeBox = styled.div`
+  background: #f7f8fa;
+  border: 1px solid ${theme.colors.cardBorder};
+  border-radius: 10px;
+  padding: 14px 18px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: ${theme.colors.textSecondary};
+`;
+
+const NoticeTitle = styled.div`
+  font-weight: 700;
+  color: ${theme.colors.textPrimary};
+  margin-bottom: 6px;
+  font-size: 13px;
+`;
+
+const NoticeLinks = styled.div`
+  margin-top: 10px;
+  display: flex;
+  gap: 12px;
+
+  a {
+    color: ${theme.colors.primary};
+    text-decoration: none;
+    font-weight: 600;
+  }
+`;
+
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
-function formatDate(iso: string): string {
+function formatDateTime(iso: string): string {
   const d = new Date(new Date(iso).getTime() + KST_OFFSET_MS);
   const yy = d.getUTCFullYear();
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
@@ -166,22 +237,44 @@ function formatDate(iso: string): string {
   return `${yy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
+function formatDate(iso: string): string {
+  const d = new Date(new Date(iso).getTime() + KST_OFFSET_MS);
+  const yy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
 function fmtNum(n: number): string {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-function reportOf(row: HistoryRow) {
+function packageLabel(code: string): string {
+  if (code === 'LEGACY') return '레거시 이용권';
+  if (code === 'P5' || code === 'P15' || code === 'P30') {
+    return PACKAGES[code].label;
+  }
+  return code;
+}
+
+function reportOf(row: DownloadHistoryRow) {
   const r = row.report;
   if (Array.isArray(r)) return r[0] ?? null;
   return r;
 }
 
-export default function PointClient({ user, initialBalance, initialHistory, tossClientKey }: Props) {
+export default function PointClient({
+  user,
+  initialTotalCredits,
+  initialPasses,
+  initialHistory,
+  tossClientKey,
+}: Props) {
   const router = useRouter();
-  const [balance, setBalance] = useState(initialBalance);
-  const [history, setHistory] = useState<HistoryRow[]>(initialHistory);
-  const [chargeAmount, setChargeAmount] = useState<number>(PRESETS[0]);
-  const [busy, setBusy] = useState(false);
+  const [totalCredits, setTotalCredits] = useState(initialTotalCredits);
+  const [passes, setPasses] = useState<PassRow[]>(initialPasses);
+  const [history, setHistory] = useState<DownloadHistoryRow[]>(initialHistory);
+  const [busy, setBusy] = useState<PackageCode | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleSignOut = useCallback(async () => {
@@ -191,10 +284,11 @@ export default function PointClient({ user, initialBalance, initialHistory, toss
   }, [router]);
 
   const refresh = useCallback(async () => {
-    const res = await fetch('/api/points');
+    const res = await fetch('/api/passes');
     if (res.ok) {
       const data = await res.json();
-      setBalance(data.balance);
+      setTotalCredits(data.totalCredits);
+      setPasses(data.passes);
       setHistory(data.history);
     }
   }, []);
@@ -203,10 +297,11 @@ export default function PointClient({ user, initialBalance, initialHistory, toss
     refresh();
   }, [refresh]);
 
-  const handleCharge = async () => {
+  const handlePurchase = async (code: PackageCode) => {
     if (busy) return;
     setError(null);
-    setBusy(true);
+    setBusy(code);
+    const pkg = PACKAGES[code];
     try {
       const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
       const tossPayments = await loadTossPayments(tossClientKey);
@@ -215,10 +310,10 @@ export default function PointClient({ user, initialBalance, initialHistory, toss
         `order_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
       await payment.requestPayment({
         method: 'CARD',
-        amount: { currency: 'KRW', value: chargeAmount },
+        amount: { currency: 'KRW', value: pkg.amount },
         orderId,
-        orderName: `포인트 충전 ${fmtNum(chargeAmount)}P`,
-        successUrl: `${window.location.origin}/point/payment/success`,
+        orderName: pkg.orderName,
+        successUrl: `${window.location.origin}/point/payment/success?packageCode=${pkg.code}`,
         failUrl: `${window.location.origin}/point/payment/fail`,
         customerName: user.user_metadata?.full_name || user.email || '회원',
         card: {
@@ -232,7 +327,7 @@ export default function PointClient({ user, initialBalance, initialHistory, toss
       const msg = e instanceof Error ? e.message : '결제 요청에 실패했습니다.';
       setError(msg);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -252,17 +347,21 @@ export default function PointClient({ user, initialBalance, initialHistory, toss
     }
   };
 
+  const activePasses = passes
+    .filter((p) => p.status === 'active' && p.creditsRemaining > 0 && new Date(p.expiresAt).getTime() > Date.now())
+    .sort((a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime());
+
   return (
     <>
-      <Navbar currentStep={null} user={user} onSignOut={handleSignOut} points={balance} />
+      <Navbar currentStep={null} user={user} onSignOut={handleSignOut} credits={totalCredits} />
       <Page>
         <HeroCard>
           <div>
-            <BalanceLabel>보유 포인트</BalanceLabel>
-            <BalanceValue>
-              {fmtNum(balance)}
-              <Unit>P</Unit>
-            </BalanceValue>
+            <HeroLabel>보유 이용권</HeroLabel>
+            <HeroValue>
+              {fmtNum(totalCredits)}
+              <HeroUnit>회</HeroUnit>
+            </HeroValue>
           </div>
           <Button variant="cta" size="lg" onClick={() => router.push('/')}>
             양식 만들러 가기
@@ -270,30 +369,52 @@ export default function PointClient({ user, initialBalance, initialHistory, toss
         </HeroCard>
 
         <SectionCard>
-          <SectionTitle>포인트 충전</SectionTitle>
-          <PresetRow>
-            {PRESETS.map((v) => (
-              <PresetButton
-                key={v}
-                $active={chargeAmount === v}
-                onClick={() => setChargeAmount(v)}
-              >
-                {fmtNum(v)} P
-              </PresetButton>
+          <SectionTitle>이용권 구매</SectionTitle>
+          <PackageGrid>
+            {PACKAGE_LIST.map((pkg) => (
+              <PackageCard key={pkg.code} $featured={pkg.code === 'P15'}>
+                {pkg.code === 'P15' && <PackageBadge>추천</PackageBadge>}
+                <PackageCredits>{pkg.credits}회 다운로드</PackageCredits>
+                <PackagePrice>{fmtNum(pkg.amount)}원</PackagePrice>
+                <PackageMeta>
+                  유효기간 1년<br />
+                  1회당 {Math.round(pkg.amount / pkg.credits)}원
+                </PackageMeta>
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => handlePurchase(pkg.code)}
+                  disabled={busy !== null}
+                >
+                  {busy === pkg.code ? '결제창 여는 중…' : '구매하기'}
+                </Button>
+              </PackageCard>
             ))}
-          </PresetRow>
-          <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <Button variant="primary" size="lg" onClick={handleCharge} disabled={busy}>
-              {busy ? '결제창 여는 중…' : `${fmtNum(chargeAmount)}원 충전하기`}
-            </Button>
-            <span style={{ fontSize: 12, color: theme.colors.textSecondary }}>
-              1원 = 1P · 테스트 결제입니다
-            </span>
-          </div>
+          </PackageGrid>
           {error && (
             <div style={{ marginTop: 12, color: theme.colors.error, fontSize: 13 }}>
               {error}
             </div>
+          )}
+        </SectionCard>
+
+        <SectionCard>
+          <SectionTitle>활성 이용권</SectionTitle>
+          {activePasses.length === 0 ? (
+            <EmptyRow>보유 중인 이용권이 없습니다.</EmptyRow>
+          ) : (
+            <PassList>
+              {activePasses.map((p) => (
+                <PassItem key={p.id}>
+                  <PassMeta>
+                    <PassRemainingTxt>
+                      {packageLabel(p.packageCode)} · {p.creditsRemaining}/{p.creditsTotal}회 남음
+                    </PassRemainingTxt>
+                    <PassExpiry>만료일 {formatDate(p.expiresAt)}</PassExpiry>
+                  </PassMeta>
+                </PassItem>
+              ))}
+            </PassList>
           )}
         </SectionCard>
 
@@ -308,7 +429,7 @@ export default function PointClient({ user, initialBalance, initialHistory, toss
                   <th>일시</th>
                   <th>양식</th>
                   <th>버전</th>
-                  <th>소모</th>
+                  <th>사용</th>
                   <th style={{ textAlign: 'right' }}>다시 받기</th>
                 </tr>
               </thead>
@@ -317,10 +438,10 @@ export default function PointClient({ user, initialBalance, initialHistory, toss
                   const r = reportOf(row);
                   return (
                     <tr key={row.id}>
-                      <td>{formatDate(row.created_at)}</td>
+                      <td>{formatDateTime(row.created_at)}</td>
                       <td>{r?.label || r?.filename || '—'}</td>
                       <td>v{r?.version ?? '—'}</td>
-                      <td>{fmtNum(row.points_spent)} P</td>
+                      <td>{row.credits_used}회</td>
                       <td style={{ textAlign: 'right' }}>
                         <Button
                           variant="ghost"
@@ -338,6 +459,18 @@ export default function PointClient({ user, initialBalance, initialHistory, toss
             </Table>
           )}
         </SectionCard>
+
+        <NoticeBox>
+          <NoticeTitle>이용 안내</NoticeTitle>
+          • 이용권은 발급일로부터 1년간 유효하며, 유효기간 경과 시 자동 소멸됩니다.<br />
+          • 양식 1회 다운로드 시 1회가 차감되며, 동일 양식의 재다운로드는 차감되지 않습니다.<br />
+          • 미사용 잔여 회수에 한해, 발급일로부터 30일 이내 이메일(pummacreative@gmail.com)로 환불 신청이 가능합니다.<br />
+          • 보유 회수가 부족할 경우 다운로드 시점에 이용권 구매 안내가 표시됩니다.
+          <NoticeLinks>
+            <Link href="/terms">이용약관</Link>
+            <Link href="/refund">환불 정책</Link>
+          </NoticeLinks>
+        </NoticeBox>
       </Page>
     </>
   );
