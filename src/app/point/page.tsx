@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { getBalance, listDownloadHistory } from '@/lib/points';
+import { getCreditsSummary, listDownloadHistory } from '@/lib/passes';
 import { getTossClientKey } from '@/lib/toss-client';
 import PointClient from './PointClient';
 
@@ -11,8 +11,8 @@ export default async function PointPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/');
 
-  const [balance, history] = await Promise.all([
-    getBalance(user.id),
+  const [summary, history] = await Promise.all([
+    getCreditsSummary(user.id),
     listDownloadHistory(user.id),
   ]);
 
@@ -21,7 +21,8 @@ export default async function PointPage() {
   return (
     <PointClient
       user={user}
-      initialBalance={balance}
+      initialTotalCredits={summary.totalCredits}
+      initialPasses={summary.passes}
       initialHistory={history}
       tossClientKey={clientKey}
     />

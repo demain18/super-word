@@ -8,6 +8,7 @@ import PreviewPanel from '@/components/PreviewPanel';
 import Step1ReportSelect from '@/components/steps/Step1ReportSelect';
 import Step2StyleSelect from '@/components/steps/Step2StyleSelect';
 import Step3ContentFill from '@/components/steps/Step3ContentFill';
+import PurchaseDialog from '@/components/PurchaseDialog';
 import { AppState, ReportType, StyleType, Message, VersionEntry } from '@/types';
 import { createClient } from '@/lib/supabase/client';
 import { getTossClientKey } from '@/lib/toss-client';
@@ -69,8 +70,6 @@ const LOADING_MESSAGES = {
 
 type LoadingType = keyof typeof LOADING_MESSAGES;
 
-const DOWNLOAD_COST = 200;
-
 interface HomeClientProps {
   initialUser: User | null;
 }
@@ -93,7 +92,8 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
   const [state, setState] = useState<AppState>(initialAppState);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(initialUser);
-  const [points, setPoints] = useState<number | null>(null);
+  const [credits, setCredits] = useState<number | null>(null);
+  const [purchaseDialog, setPurchaseDialog] = useState<{ open: boolean; reportId?: string }>({ open: false });
   const isAuthenticated = !!user;
 
   useEffect(() => {
@@ -108,23 +108,23 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
     if (user) return;
     setState(initialAppState);
     setPreviewHtml(null);
-    setPoints(null);
+    setCredits(null);
   }, [user]);
 
-  const refreshPoints = useCallback(async () => {
+  const refreshCredits = useCallback(async () => {
     try {
-      const res = await fetch('/api/points');
+      const res = await fetch('/api/passes');
       if (!res.ok) return;
       const data = await res.json();
-      setPoints(data.balance);
+      setCredits(data.totalCredits);
     } catch {
       // ignore
     }
   }, []);
 
   useEffect(() => {
-    if (user) refreshPoints();
-  }, [user, refreshPoints]);
+    if (user) refreshCredits();
+  }, [user, refreshCredits]);
 
   const handleSignIn = useCallback(async () => {
     const supabase = createClient();
@@ -355,40 +355,6 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
     document.body.removeChild(a);
   }, []);
 
-  const openTossForDownload = useCallback(
-    async (reportId: string) => {
-      if (!user) return;
-      const clientKey = getTossClientKey();
-      try {
-        const { loadTossPayments } = await import('@tosspayments/tosspayments-sdk');
-        const tossPayments = await loadTossPayments(clientKey);
-        const payment = tossPayments.payment({ customerKey: user.id });
-        const orderId = (crypto?.randomUUID?.() ??
-          `order_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
-        const nextUrl = `/?autoDownload=${encodeURIComponent(reportId)}`;
-        await payment.requestPayment({
-          method: 'CARD',
-          amount: { currency: 'KRW', value: DOWNLOAD_COST },
-          orderId,
-          orderName: '양식 다운로드 1회',
-          successUrl: `${window.location.origin}/point/payment/success?next=${encodeURIComponent(nextUrl)}`,
-          failUrl: `${window.location.origin}/point/payment/fail`,
-          customerName: user.user_metadata?.full_name || user.email || '회원',
-          card: {
-            useEscrow: false,
-            flowMode: 'DEFAULT',
-            useCardPoint: false,
-            useAppCardOnly: false,
-          },
-        });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : '결제 요청 실패';
-        alert(msg);
-      }
-    },
-    [user]
-  );
-
   const requestDownload = useCallback(
     async (reportId: string): Promise<boolean> => {
       try {
@@ -398,23 +364,23 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
           body: JSON.stringify({ reportId }),
         });
         const data = await res.json();
-        if (res.status === 409 && data.error === 'INSUFFICIENT_POINTS') {
-          setPoints(typeof data.balance === 'number' ? data.balance : points);
-          await openTossForDownload(reportId);
+        if (res.status === 409 && data.error === 'NO_CREDITS') {
+          setCredits(typeof data.creditsRemaining === 'number' ? data.creditsRemaining : 0);
+          setPurchaseDialog({ open: true, reportId });
           return false;
         }
         if (!res.ok) {
           throw new Error(data.error || '다운로드 실패');
         }
         triggerBlobDownload(data.signedUrl, data.filename);
-        if (typeof data.balance === 'number') setPoints(data.balance);
+        if (typeof data.creditsRemaining === 'number') setCredits(data.creditsRemaining);
         return true;
       } catch (e) {
         alert(e instanceof Error ? e.message : '다운로드에 실패했습니다.');
         return false;
       }
     },
-    [openTossForDownload, points, triggerBlobDownload]
+    [triggerBlobDownload]
   );
 
   const handleDownloadVersion = (index: number) => {
@@ -437,12 +403,18 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
     url.searchParams.delete('autoDownload');
     window.history.replaceState({}, '', url.toString());
     (async () => {
-      await refreshPoints();
+      await refreshCredits();
       await requestDownload(auto);
     })();
-  }, [user, refreshPoints, requestDownload]);
+  }, [user, refreshCredits, requestDownload]);
 
   const isStep3 = state.currentStep === 3;
+  let tossClientKey = '';
+  try {
+    tossClientKey = getTossClientKey();
+  } catch {
+    // env not configured; dialog renders disabled
+  }
 
   return (
     <>
@@ -450,7 +422,7 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
         currentStep={state.currentStep}
         user={user}
         onSignOut={handleSignOut}
-        points={points}
+        credits={credits}
       />
       <AppLayout>
         <PreviewPanel
@@ -494,6 +466,15 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
           )}
         </OptionsPanel>
       </AppLayout>
+      {user && tossClientKey && (
+        <PurchaseDialog
+          open={purchaseDialog.open}
+          user={user}
+          tossClientKey={tossClientKey}
+          reportId={purchaseDialog.reportId}
+          onClose={() => setPurchaseDialog({ open: false })}
+        />
+      )}
     </>
   );
 }

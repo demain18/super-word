@@ -109,13 +109,12 @@ export async function findDownloadForReport(
 
 export async function recordDownload(
   userId: string,
-  reportId: string,
-  pointsSpent: number
+  reportId: string
 ): Promise<string> {
   const svc = createServiceClient();
   const { data, error } = await svc
     .from('downloads')
-    .insert({ user_id: userId, report_id: reportId, points_spent: pointsSpent })
+    .insert({ user_id: userId, report_id: reportId })
     .select('id')
     .single();
   if (error) throw error;

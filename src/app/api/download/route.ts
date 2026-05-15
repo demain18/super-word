@@ -7,12 +7,7 @@ import {
   deleteDownload,
   createSignedDownloadUrl,
 } from '@/lib/reports';
-import {
-  DOWNLOAD_COST,
-  getBalance,
-  spendPoints,
-  InsufficientPointsError,
-} from '@/lib/points';
+import { consumeCredit, getCreditsSummary, NoCreditsError } from '@/lib/passes';
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,34 +31,28 @@ export async function POST(req: NextRequest) {
     }
 
     const existing = await findDownloadForReport(user.id, reportId);
-    let balance: number;
+    let creditsRemaining: number;
 
     if (existing) {
-      balance = await getBalance(user.id);
+      const summary = await getCreditsSummary(user.id);
+      creditsRemaining = summary.totalCredits;
     } else {
-      const current = await getBalance(user.id);
-      if (current < DOWNLOAD_COST) {
+      const summary = await getCreditsSummary(user.id);
+      if (summary.totalCredits < 1) {
         return NextResponse.json(
-          {
-            error: 'INSUFFICIENT_POINTS',
-            balance: current,
-            required: DOWNLOAD_COST,
-          },
+          { error: 'NO_CREDITS', creditsRemaining: 0 },
           { status: 409 }
         );
       }
-      const downloadId = await recordDownload(user.id, reportId, DOWNLOAD_COST);
+      const downloadId = await recordDownload(user.id, reportId);
       try {
-        balance = await spendPoints(user.id, DOWNLOAD_COST, { downloadId });
+        const result = await consumeCredit(user.id, { downloadId });
+        creditsRemaining = result.remainingTotal;
       } catch (e) {
         await deleteDownload(downloadId).catch(() => {});
-        if (e instanceof InsufficientPointsError) {
+        if (e instanceof NoCreditsError) {
           return NextResponse.json(
-            {
-              error: 'INSUFFICIENT_POINTS',
-              balance: current,
-              required: DOWNLOAD_COST,
-            },
+            { error: 'NO_CREDITS', creditsRemaining: 0 },
             { status: 409 }
           );
         }
@@ -77,7 +66,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       signedUrl,
       filename: report.filename,
-      balance,
+      creditsRemaining,
     });
   } catch (error) {
     console.error('Download API error:', error);

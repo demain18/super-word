@@ -9,7 +9,7 @@ interface NavbarProps {
   currentStep: 1 | 2 | 3 | null;
   user: User | null;
   onSignOut: () => void;
-  points?: number | null;
+  credits?: number | null;
 }
 
 const Nav = styled.nav`
@@ -79,66 +79,86 @@ const UserName = styled.span`
   }
 `;
 
-const PointBadge = styled.button`
-  background: linear-gradient(135deg, #FFD93D 0%, #FF9F1A 55%, #E47911 100%);
-  color: #1f0f00;
+const CreditBadge = styled.button`
+  position: relative;
+  background: linear-gradient(135deg, #FFF6D6 0%, #FFD97A 60%, #F4B73D 100%);
+  color: #4A2C00;
   border: 1px solid #B86B00;
-  border-radius: 999px;
-  padding: 6px 14px 6px 10px;
+  border-radius: 6px;
+  padding: 7px 18px;
   font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.3px;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   cursor: pointer;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.1),
     0 2px 4px rgba(0, 0, 0, 0.25);
   transition: transform ${theme.transitions.fast}, box-shadow ${theme.transitions.fast};
+
+  /* Ticket side notches — small circles colored to the navbar background, half-outside the badge edge */
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    background: #131921;
+    border-radius: 50%;
+    transform: translateY(-50%);
+    box-shadow: inset 0 0 0 1px rgba(184, 107, 0, 0.5);
+  }
+  &::before { left: -6px; }
+  &::after { right: -6px; }
 
   &:hover {
     transform: translateY(-1px);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.7),
-      inset 0 -2px 0 rgba(0, 0, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.1),
       0 4px 8px rgba(0, 0, 0, 0.3);
   }
   &:active {
     transform: translateY(0);
     box-shadow:
-      inset 0 2px 3px rgba(0, 0, 0, 0.25),
+      inset 0 2px 3px rgba(0, 0, 0, 0.2),
       0 1px 2px rgba(0, 0, 0, 0.2);
   }
   &:focus {
     outline: none;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
       0 0 0 3px rgba(255, 215, 0, 0.45);
   }
 `;
 
-const PointCoin = styled.span`
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 900;
-  color: #5a2a00;
-  background: radial-gradient(circle at 30% 30%, #FFF3A3 0%, #FFD542 55%, #C98600 100%);
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.9),
-    inset 0 -1px 1px rgba(0, 0, 0, 0.25),
-    0 0 0 1px rgba(110, 60, 0, 0.5);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+const CreditLabel = styled.span`
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #6B3A00;
+  opacity: 0.85;
 `;
 
-function formatPoints(n: number): string {
+const CreditDivider = styled.span`
+  display: inline-block;
+  width: 0;
+  height: 16px;
+  border-left: 1.5px dashed rgba(107, 58, 0, 0.55);
+`;
+
+const CreditValue = styled.span`
+  font-size: 14px;
+  font-weight: 900;
+  color: #1f0f00;
+  letter-spacing: 0.2px;
+`;
+
+function formatCount(n: number): string {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
@@ -254,7 +274,7 @@ const STEPS = [
   { num: 3, label: '내용 작성' },
 ];
 
-export default function Navbar({ currentStep, user, onSignOut, points }: NavbarProps) {
+export default function Navbar({ currentStep, user, onSignOut, credits }: NavbarProps) {
   const router = useRouter();
   const meta = (user?.user_metadata ?? {}) as {
     full_name?: string;
@@ -275,10 +295,11 @@ export default function Navbar({ currentStep, user, onSignOut, points }: NavbarP
         </Logo>
         {user && (
           <UserMenu>
-            <PointBadge type="button" onClick={() => router.push('/point')} title="포인트 페이지로 이동">
-              <PointCoin aria-hidden>P</PointCoin>
-              {`${formatPoints(typeof points === 'number' ? points : 0)} P`}
-            </PointBadge>
+            <CreditBadge type="button" onClick={() => router.push('/point')} title="이용권 페이지로 이동">
+              <CreditLabel>사용권</CreditLabel>
+              <CreditDivider aria-hidden />
+              <CreditValue>{formatCount(typeof credits === 'number' ? credits : 0)}회</CreditValue>
+            </CreditBadge>
             <UserInfo>
               {avatarUrl ? (
                 <Avatar src={avatarUrl} alt={displayName} referrerPolicy="no-referrer" />

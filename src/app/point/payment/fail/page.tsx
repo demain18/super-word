@@ -43,7 +43,7 @@ export default async function PaymentFailPage({
             fontWeight: 600,
           }}
         >
-          포인트 페이지로 돌아가기
+          이용권 페이지로 돌아가기
         </Link>
       </div>
     </div>
