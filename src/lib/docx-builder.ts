@@ -271,7 +271,8 @@ function createDataTable(data: TableData, style: StyleSettings): Table {
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    // 균등 분할(FIXED) 대신 내용 기반 자동 맞춤 → 긴 텍스트 컬럼이 적절히 넓어진다.
+    layout: TableLayoutType.AUTOFIT,
     rows: tableRows,
   });
 }

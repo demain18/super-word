@@ -465,24 +465,20 @@ function wrapPage(content: string, s: StyleSettings): string {
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
-    background: #f5f5f5;
+    background: #e9ebee;
     display: flex;
     justify-content: center;
-    padding: 14px;
+    padding: 16px;
   }
+  /* 실제 A4(210x297mm) + 워드 기본 여백(1인치=25.4mm)에 맞춰 결과물과 격차를 줄인다.
+     내용이 적어도 최소 한 장(297mm)은 채워지고, 길면 자연히 길어진다. */
   .page {
-    width: 100%;
-    max-width: 820px;
-    min-height: auto;
+    width: 210mm;
+    min-height: 297mm;
     background: white;
-    padding: 36px 44px;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+    padding: 25.4mm;
+    box-shadow: 0 1px 10px rgba(0,0,0,0.14);
     font-family: ${s.font};
-  }
-  @media (max-width: 800px) {
-    .page {
-      padding: 24px 20px;
-    }
   }
 </style>
 </head>
