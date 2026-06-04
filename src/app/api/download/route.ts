@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       signedUrl,
       filename: report.filename,
       creditsRemaining,
+      consumed: !existing,
     });
   } catch (error) {
     console.error('Download API error:', error);

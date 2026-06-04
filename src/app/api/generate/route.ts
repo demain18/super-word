@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Packer } from 'docx';
-import { buildStyleFeedbackPrompt, buildContentFillPrompt, buildCustomFeedbackPrompt, buildCustomFormPrompt, buildCustomEditPrompt } from '@/lib/prompts';
+import { buildContentFillPrompt, buildCustomFeedbackPrompt, buildCustomFormPrompt, buildCustomEditPrompt } from '@/lib/prompts';
 import { buildDocument, buildDocumentFromAI, buildDocumentWithReplacements, extractPlaceholders, AIDocumentContent } from '@/lib/docx-builder';
 import { generateTemplatePreviewHtml, generateAIPreviewHtml, generateReplacedPreviewHtml } from '@/lib/html-preview';
 import { ReportType, StyleType, REPORT_TYPES } from '@/types';
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { action, reportType, style, styleHistory, customFeedback, userInput, sessionId, version: currentVersion } = body;
+    const { action, reportType, style, customFeedback, userInput, sessionId, version: currentVersion } = body;
 
     const sid = sessionId || randomUUID();
     const nextVersion = (currentVersion || 0) + 1;
@@ -107,8 +107,8 @@ export async function POST(req: NextRequest) {
 
       case 'style': {
         const styleT = style as StyleType;
-        const history = (styleHistory || []) as StyleType[];
 
+        // 스타일은 템플릿을 결정적으로 다시 빌드한다 — 별도 Gemini 호출 없이 즉시 처리.
         const doc = buildDocument(reportType as ReportType, styleT);
         const buffer = await Packer.toBuffer(doc);
         const previewHtml = generateTemplatePreviewHtml(reportType as ReportType, styleT);
@@ -118,16 +118,16 @@ export async function POST(req: NextRequest) {
           previewHtml,
         });
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-        const prompt = buildStyleFeedbackPrompt(reportType as ReportType, styleT, history, customFeedback);
-        const result = await model.generateContent(prompt);
-        const feedbackMessage = result.response.text();
-
+        const styleLabels: Record<string, string> = {
+          corporate: '대기업',
+          'global-startup': '글로벌 스타트업',
+          government: '공무원/정부',
+        };
         return NextResponse.json({
           sessionId: sid,
           reportId,
           previewHtml,
-          message: feedbackMessage,
+          message: `${styleLabels[styleT] || ''} 스타일을 적용했습니다.`.trim(),
           version: nextVersion,
         });
       }

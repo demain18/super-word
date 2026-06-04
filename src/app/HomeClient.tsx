@@ -10,6 +10,7 @@ import Step2StyleSelect from '@/components/steps/Step2StyleSelect';
 import Step3ContentFill from '@/components/steps/Step3ContentFill';
 import PurchaseDialog from '@/components/PurchaseDialog';
 import AuthModal from '@/components/AuthModal';
+import Toast from '@/components/Toast';
 import RecentProjects from '@/components/RecentProjects';
 import { AppState, ReportType, StyleType, Message, VersionEntry } from '@/types';
 import type { ProjectSummary } from '@/lib/reports';
@@ -156,6 +157,14 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
   const [authModal, setAuthModal] = useState<{ open: boolean; reportId?: string }>({ open: false });
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3500);
+  }, []);
 
   // 프로젝트는 브라우저(게스트) 단위로 식별 — 로그인과 무관하게 동일 목록을 본다.
   // guestId는 호출 시점에 getGuestId()로 직접 읽는다(렌더 중 ref 접근 회피).
@@ -592,6 +601,9 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         if (!res.ok) {
           throw new Error(data.error || '다운로드 실패');
         }
+        if (data.consumed) {
+          showToast('이용권 1장을 소모하였습니다. 잠시 뒤 다운로드가 개시됩니다.');
+        }
         triggerBlobDownload(data.signedUrl, data.filename);
         if (typeof data.creditsRemaining === 'number') setCredits(data.creditsRemaining);
         return true;
@@ -600,7 +612,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         return false;
       }
     },
-    [triggerBlobDownload]
+    [triggerBlobDownload, showToast]
   );
 
   const handleDownloadVersion = (index: number) => {
@@ -749,6 +761,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         onClose={() => setAuthModal({ open: false })}
         onGoogle={() => handleLoginIntent(authModal.reportId)}
       />
+      {toast && <Toast message={toast} />}
     </>
   );
 }
