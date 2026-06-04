@@ -3,7 +3,9 @@ export type ReportType =
   | 'business-trip'
   | 'meeting-minutes'
   | 'weekly-monthly'
-  | 'performance';
+  | 'performance'
+  | 'quotation'
+  | 'service-contract';
 
 export type StyleType = 'corporate' | 'global-startup' | 'government';
 
@@ -76,6 +78,18 @@ export const REPORT_TYPES: ReportTypeInfo[] = [
     label: '실적 보고서',
     description: '업무 성과와 실적을 수치와 함께 보고하는 문서',
     icon: '📈',
+  },
+  {
+    id: 'quotation',
+    label: '견적서',
+    description: '공급 품목·수량·단가·금액을 정리한 견적 문서',
+    icon: '🧾',
+  },
+  {
+    id: 'service-contract',
+    label: '용역 계약서',
+    description: '용역 제공 조건과 계약 사항을 정리한 계약 문서',
+    icon: '📜',
   },
 ];
 

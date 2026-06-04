@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     const nextVersion = (currentVersion || 0) + 1;
     const filename = `report_v${nextVersion}.docx`;
     const reportLabel =
-      REPORT_TYPES.find((r) => r.id === reportType)?.label ?? '보고서';
+      REPORT_TYPES.find((r) => r.id === reportType)?.label ?? '문서 양식';
 
     const persist = async (
       buffer: Buffer,
@@ -201,7 +201,7 @@ export async function POST(req: NextRequest) {
           sessionId: sid,
           reportId,
           previewHtml,
-          message: parsed.message || '보고서 내용이 작성되었습니다.',
+          message: parsed.message || '양식 내용이 작성되었습니다.',
           version: nextVersion,
         });
       }

@@ -124,10 +124,10 @@ export default function Step1ReportSelect({
   return (
     <Container>
       <div>
-        <Title>보고서 종류 선택</Title>
+        <Title>문서 양식 선택</Title>
         <Subtitle>
           {isAuthenticated
-            ? '생성할 보고서 종류를 선택해주세요'
+            ? '만들 문서 양식을 선택하세요'
             : '서비스를 이용하려면 먼저 로그인해주세요'}
         </Subtitle>
       </div>
