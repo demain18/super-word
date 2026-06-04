@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import styled from '@emotion/styled';
+import { keyframes } from '@emotion/react';
 import { theme } from '@/styles/theme';
 import Button from '@/components/common/Button';
 import { Message } from '@/types';
@@ -48,7 +49,13 @@ const ChatArea = styled.div`
   max-height: 400px;
 `;
 
-const MessageBubble = styled.div<{ $role: 'user' | 'assistant' }>`
+// iMessage처럼 모서리에서 통통 튀어나오는 등장(살짝 오버슈트하는 bounce easing).
+const popIn = keyframes`
+  0% { opacity: 0; transform: scale(0.4); }
+  100% { opacity: 1; transform: scale(1); }
+`;
+
+const MessageBubble = styled.div<{ $role: 'user' | 'assistant'; $delayed?: boolean }>`
   max-width: 85%;
   padding: 10px 14px;
   border-radius: 12px;
@@ -59,11 +66,64 @@ const MessageBubble = styled.div<{ $role: 'user' | 'assistant' }>`
     $role === 'user' ? '#232F3E' : '#FFFFFF'};
   color: ${({ $role }) =>
     $role === 'user' ? '#FFFFFF' : theme.colors.textPrimary};
-  border: ${({ $role }) =>
-    $role === 'assistant' ? `1px solid ${theme.colors.borderGray}` : 'none'};
+  border: 1px solid
+    ${({ $role }) => ($role === 'user' ? 'rgba(255, 255, 255, 0.22)' : theme.colors.borderGray)};
   box-shadow: ${({ $role }) =>
     $role === 'assistant' ? theme.shadows.card : 'none'};
   white-space: pre-wrap;
+  position: relative;
+  transform-origin: ${({ $role }) => ($role === 'user' ? 'bottom right' : 'bottom left')};
+  animation: ${popIn} 300ms cubic-bezier(0.18, 0.89, 0.32, 1.3) both;
+  animation-delay: ${({ $delayed }) => ($delayed ? '300ms' : '0ms')};
+
+  /* 말풍선 꼬리: 박스와 동일한 1px 외곽선(테두리 삼각형 + 살짝 작은 채움 삼각형). 얇게. */
+  &::before {
+    content: '';
+    position: absolute;
+    bottom: 7px;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    ${({ $role }) =>
+      $role === 'user'
+        ? 'right: -9px; border-left: 8px solid rgba(255, 255, 255, 0.22);'
+        : `left: -9px; border-right: 8px solid ${theme.colors.borderGray};`}
+  }
+  /* 채움 삼각형의 base를 박스 안쪽으로 겹쳐(±2px) 박스 테두리선을 덮어 구분선이 안 보이게. */
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: 8px;
+    width: 0;
+    height: 0;
+    border-top: 3px solid transparent;
+    border-bottom: 3px solid transparent;
+    ${({ $role }) =>
+      $role === 'user'
+        ? 'right: -6px; border-left: 8px solid #232F3E;'
+        : 'left: -6px; border-right: 8px solid #FFFFFF;'}
+  }
+`;
+
+const dotPulse = keyframes`
+  0%, 75%, 100% { opacity: 0.25; }
+  35% { opacity: 1; }
+`;
+// 점 세 개를 항상 렌더하고 opacity만 순차로 변화 → 박스 가로폭이 고정된다(가변 X).
+const Typing = styled.span`
+  margin-left: 4px;
+  letter-spacing: 1px;
+  span {
+    display: inline-block;
+    animation: ${dotPulse} 1.2s infinite both;
+  }
+  span:nth-of-type(2) {
+    animation-delay: 0.18s;
+  }
+  span:nth-of-type(3) {
+    animation-delay: 0.36s;
+  }
 `;
 
 const InputArea = styled.div`
@@ -160,18 +220,23 @@ export default function Step3ContentFill({
       </HelpText>
 
       <ChatArea ref={chatRef}>
-        {messages.length === 0 && (
-          <MessageBubble $role="assistant">
-            안녕하세요! 양식에 들어갈 내용을 알려주세요. 이름, 부서, 날짜, 주요 내용 등을 자유롭게 입력해주시면 양식에 맞게 채워넣겠습니다.
-          </MessageBubble>
-        )}
+        <MessageBubble $role="assistant">
+          안녕하세요! 양식에 들어갈 내용을 알려주세요. 이름, 부서, 날짜, 주요 내용 등을 자유롭게 입력해주시면 양식에 맞게 채워넣겠습니다.
+        </MessageBubble>
         {messages.map((msg, i) => (
           <MessageBubble key={i} $role={msg.role}>
             {msg.content}
           </MessageBubble>
         ))}
         {isLoading && (
-          <MessageBubble $role="assistant">작성 중...</MessageBubble>
+          <MessageBubble $role="assistant" $delayed>
+            작성중
+            <Typing>
+              <span>.</span>
+              <span>.</span>
+              <span>.</span>
+            </Typing>
+          </MessageBubble>
         )}
       </ChatArea>
 

@@ -146,6 +146,7 @@ const initialAppState: AppState = {
   currentVersionIndex: 0,
   lockedVersionIndex: null,
   aiContent: null,
+  styleSpec: null,
 };
 
 export default function HomeClient({ initialUser, initialCredits }: HomeClientProps) {
@@ -269,6 +270,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         currentVersionIndex: lastIdx,
         lockedVersionIndex: restoreStep === 3 ? lastIdx : null,
         aiContent: (rows[lastIdx]?.aiContent ?? null) as AppState['aiContent'],
+        styleSpec: null,
       });
       setPreviewHtml(versions[lastIdx].previewHtml || null);
     } catch (e) {
@@ -441,7 +443,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     );
 
     if (result) {
-      setState((prev) => ({ ...prev, currentStep: 2 }));
+      setState((prev) => ({ ...prev, currentStep: 2, selectedStyle: null, styleSpec: null }));
     }
   };
 
@@ -450,7 +452,13 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     if (!prompt.trim()) return false;
     const result = await callGenerateApi({ action: 'custom-generate', prompt }, 'generate');
     if (result) {
-      setState((prev) => ({ ...prev, selectedReport: null, currentStep: 2 }));
+      setState((prev) => ({
+        ...prev,
+        selectedReport: null,
+        currentStep: 2,
+        selectedStyle: null,
+        styleSpec: null,
+      }));
       return true;
     }
     return false;
@@ -472,25 +480,21 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         ...prev,
         selectedStyle: style,
         styleHistory: [...prev.styleHistory, style],
+        styleSpec: null,
       }));
     }
   };
 
-  const handleCustomFeedback = async (feedback: string) => {
+  // 양식 스타일 단계의 자유 입력 → 색·폰트 등 스타일을 프롬프트로 지정(custom-style-prompt).
+  const handleStylePrompt = async (prompt: string) => {
+    if (!prompt.trim()) return;
     const body = state.aiContent
-      ? {
-          action: 'custom-edit',
-          aiContent: state.aiContent,
-          instruction: feedback,
-          currentStyle: state.selectedStyle,
-        }
-      : {
-          action: 'custom-feedback',
-          reportType: state.selectedReport,
-          customFeedback: feedback,
-          currentStyle: state.selectedStyle,
-        };
-    await callGenerateApi(body, 'custom-feedback');
+      ? { action: 'style-prompt', prompt, aiContent: state.aiContent }
+      : { action: 'style-prompt', prompt, reportType: state.selectedReport };
+    const result = await callGenerateApi(body, 'custom-feedback');
+    if (result?.styleSpec) {
+      setState((prev) => ({ ...prev, styleSpec: result.styleSpec, selectedStyle: null }));
+    }
   };
 
   const handleStep2Next = () => {
@@ -539,18 +543,19 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     ];
     setState((prev) => ({ ...prev, messages: newMessages }));
 
+    const activeStyle = state.styleSpec ?? state.selectedStyle;
     const body = state.aiContent
       ? {
           action: 'custom-edit',
           aiContent: state.aiContent,
           instruction: message,
-          currentStyle: state.selectedStyle,
+          currentStyle: activeStyle,
         }
       : {
           action: 'content',
           reportType: state.selectedReport,
           userInput: message,
-          currentStyle: state.selectedStyle,
+          currentStyle: activeStyle,
         };
     const result = await callGenerateApi(body, 'content');
 
@@ -728,7 +733,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
             <StepPane inert={state.currentStep !== 2 ? true : undefined}>
               <Step2StyleSelect
                 onStyleSelect={handleStyleSelect}
-                onCustomFeedback={handleCustomFeedback}
+                onCustomFeedback={handleStylePrompt}
                 onNext={handleStep2Next}
                 onBack={() => handleBack(1)}
                 onDownload={handleDownloadCurrent}

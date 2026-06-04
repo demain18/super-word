@@ -34,6 +34,20 @@ export interface VersionEntry {
   label: string;
 }
 
+/** 자유 스타일(프롬프트 기반). AI가 만들고 프리뷰·워드 렌더러가 각자 단위로 변환한다.
+ *  색상은 #RRGGBB, 크기는 pt 단위. */
+export interface CustomStyleSpec {
+  font: string;
+  titlePt: number;
+  headingPt: number;
+  bodyPt: number;
+  titleColor: string;
+  headingColor: string;
+  accentColor: string;
+  borderColor: string;
+  headerBgColor: string;
+}
+
 /** 커스텀(프롬프트 기반) 양식의 AI 문서 구조. 단계 간에 들고 다닌다. */
 export interface AiDocContent {
   title: string;
@@ -59,6 +73,8 @@ export interface AppState {
   lockedVersionIndex: number | null;
   /** 커스텀 양식이면 그 AI 문서 구조, 프리셋 양식이면 null. */
   aiContent: AiDocContent | null;
+  /** 자유 스타일(프롬프트)로 지정된 스타일 사양. 없으면 selectedStyle(프리셋) 사용. */
+  styleSpec: CustomStyleSpec | null;
 }
 
 export const REPORT_TYPES: ReportTypeInfo[] = [
