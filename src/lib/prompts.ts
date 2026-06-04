@@ -7,6 +7,8 @@ const REPORT_LABELS: Record<ReportType, string> = {
   'meeting-minutes': '회의록',
   'weekly-monthly': '주간/월간 업무보고서',
   performance: '실적 보고서',
+  quotation: '견적서',
+  'service-contract': '용역 계약서',
 };
 
 export function buildStyleFeedbackPrompt(

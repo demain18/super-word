@@ -127,7 +127,7 @@ const Empty = styled.div`
 `;
 
 function reportLabel(reportType: string | null): string {
-  return REPORT_TYPES.find((r) => r.id === reportType)?.label ?? '보고서';
+  return REPORT_TYPES.find((r) => r.id === reportType)?.label ?? '문서 양식';
 }
 
 function formatDate(iso: string): string {
@@ -156,7 +156,7 @@ export default function RecentProjects({
         {loading && projects.length === 0 ? (
           <Empty>불러오는 중…</Empty>
         ) : projects.length === 0 ? (
-          <Empty>아직 저장된 프로젝트가 없어요. 보고서를 만들면 여기에 기록됩니다.</Empty>
+          <Empty>아직 저장된 프로젝트가 없어요. 양식을 만들면 여기에 기록됩니다.</Empty>
         ) : (
           projects.map((p) => (
             <Row

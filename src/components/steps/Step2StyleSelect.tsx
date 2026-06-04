@@ -128,7 +128,7 @@ export default function Step2StyleSelect({
   return (
     <Container>
       <div>
-        <BackButton onClick={onBack} disabled={isLoading}>← 보고서 선택으로 돌아가기</BackButton>
+        <BackButton onClick={onBack} disabled={isLoading}>← 양식 선택으로 돌아가기</BackButton>
         <Title style={{ marginTop: '8px' }}>양식 스타일 선택</Title>
         <Subtitle>
           원하는 스타일을 선택하면 양식이 수정됩니다. 여러 번 클릭하면 해당 스타일이

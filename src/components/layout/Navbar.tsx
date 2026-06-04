@@ -15,6 +15,8 @@ interface NavbarProps {
   onSignOut: () => void;
   onSignIn?: () => void;
   onStepNavigate?: (step: 1 | 2 | 3) => void;
+  /** 베이스 문서가 하나라도 생성됐는지 — true면 2·3단계로도 자유 이동 가능. */
+  baseReady?: boolean;
   credits?: number | null;
 }
 
@@ -483,7 +485,7 @@ function PolicyMenu() {
 }
 
 const STEPS = [
-  { num: 1, label: '보고서 선택' },
+  { num: 1, label: '양식 선택' },
   { num: 2, label: '양식 스타일' },
   { num: 3, label: '내용 작성' },
 ];
@@ -494,6 +496,7 @@ export default function Navbar({
   onSignOut,
   onSignIn,
   onStepNavigate,
+  baseReady = false,
   credits,
 }: NavbarProps) {
   const router = useRouter();
@@ -557,7 +560,11 @@ export default function Navbar({
         <SubNav>
           {STEPS.map((step, i) => {
             const completed = currentStep! > step.num;
-            const clickable = completed && !!onStepNavigate;
+            // 1단계는 항상, 2·3단계는 베이스가 있으면 자유 이동. 현재 단계는 제외.
+            const clickable =
+              !!onStepNavigate &&
+              step.num !== currentStep &&
+              (step.num === 1 || baseReady);
             return (
               <span key={step.num} style={{ display: 'flex', alignItems: 'center' }}>
                 <Step

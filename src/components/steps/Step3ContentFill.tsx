@@ -162,7 +162,7 @@ export default function Step3ContentFill({
       <ChatArea ref={chatRef}>
         {messages.length === 0 && (
           <MessageBubble $role="assistant">
-            안녕하세요! 보고서에 들어갈 내용을 알려주세요. 이름, 부서, 날짜, 주요 내용 등을 자유롭게 입력해주시면 양식에 맞게 채워넣겠습니다.
+            안녕하세요! 양식에 들어갈 내용을 알려주세요. 이름, 부서, 날짜, 주요 내용 등을 자유롭게 입력해주시면 양식에 맞게 채워넣겠습니다.
           </MessageBubble>
         )}
         {messages.map((msg, i) => (

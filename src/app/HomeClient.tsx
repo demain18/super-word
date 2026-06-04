@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import styled from '@emotion/styled';
-import { keyframes } from '@emotion/react';
 import { theme } from '@/styles/theme';
 import Navbar from '@/components/layout/Navbar';
 import PreviewPanel from '@/components/PreviewPanel';
@@ -37,35 +36,51 @@ const AppLayout = styled.div`
   }
 `;
 
+// 단계 슬라이드 뷰포트: 가로 트랙을 translateX로 밀어 캐러셀처럼 전환한다.
 const OptionsPanel = styled.div`
   flex: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
   height: 100%;
   min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
+  overflow: hidden;
 
   @media (max-width: ${theme.breakpoints.tablet}) {
     flex: none;
     width: 100%;
     height: auto;
-    min-height: 0;
     overflow: visible;
   }
 `;
 
-const stepSlideIn = keyframes`
-  from { opacity: 0; transform: translateX(28px); }
-  to { opacity: 1; transform: translateX(0); }
+// 슬라이드 사이 가로 간격(전환 중 패널 사이로 보이는 여백). 이동 거리도 이만큼 더해진다.
+const SLIDE_GAP = 40;
+
+const StepTrack = styled.div<{ $step: number }>`
+  display: flex;
+  gap: ${SLIDE_GAP}px;
+  width: 100%;
+  height: 100%;
+  transform: translateX(calc(${({ $step }) => -($step - 1)} * (100% + ${SLIDE_GAP}px)));
+  transition: transform 380ms ease-in-out;
+
+  @media (max-width: ${theme.breakpoints.tablet}) {
+    height: auto;
+  }
 `;
 
-const StepSlide = styled.div`
+const StepPane = styled.div`
+  flex: 0 0 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  animation: ${stepSlideIn} 300ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  padding-right: 4px;
+
+  @media (max-width: ${theme.breakpoints.tablet}) {
+    height: auto;
+    overflow: visible;
+  }
 `;
 
 const LOADING_MESSAGES = {
@@ -86,7 +101,7 @@ const LOADING_MESSAGES = {
   ],
   content: [
     '입력 정보를 분석하고 있습니다...',
-    '보고서 내용을 작성하고 있습니다...',
+    '양식 내용을 작성하고 있습니다...',
     '문서를 완성하고 있습니다...',
   ],
 };
@@ -467,9 +482,24 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     }
   };
 
-  // 상단 단계 표시 클릭 → 이미 지난 단계로 되돌아간다(완료된 단계만 클릭 가능).
+  // 상단 단계 클릭 → 자유 이동. 베이스(문서)만 있으면 2·3 어디로든 이동 가능.
+  // 3단계(내용)로 가면 현재 버전을 고정하고, 1·2단계로 가면 고정 해제 + 대화 초기화.
   const handleStepNavigate = (step: 1 | 2 | 3) => {
-    if (step < state.currentStep) handleBack(step as 1 | 2);
+    if (step === state.currentStep) return;
+    if (step === 3) {
+      setState((prev) => ({
+        ...prev,
+        currentStep: 3,
+        lockedVersionIndex: prev.currentVersionIndex,
+      }));
+    } else {
+      setState((prev) => ({
+        ...prev,
+        currentStep: step,
+        lockedVersionIndex: null,
+        messages: [],
+      }));
+    }
   };
 
   const handleSendMessage = async (message: string) => {
@@ -624,6 +654,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         onSignOut={handleSignOut}
         onSignIn={() => handleLoginIntent()}
         onStepNavigate={handleStepNavigate}
+        baseReady={state.versions.length > 0}
         credits={credits}
       />
       <AppLayout>
@@ -645,8 +676,8 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
           locked={isStep3}
         />
         <OptionsPanel>
-          <StepSlide key={state.currentStep}>
-            {state.currentStep === 1 && (
+          <StepTrack $step={state.currentStep}>
+            <StepPane inert={state.currentStep !== 1 ? true : undefined}>
               <Step1ReportSelect
                 selectedReport={state.selectedReport}
                 onSelect={handleReportSelect}
@@ -654,8 +685,8 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
                 isAuthenticated
                 onSignIn={() => handleLoginIntent()}
               />
-            )}
-            {state.currentStep === 2 && (
+            </StepPane>
+            <StepPane inert={state.currentStep !== 2 ? true : undefined}>
               <Step2StyleSelect
                 onStyleSelect={handleStyleSelect}
                 onCustomFeedback={handleCustomFeedback}
@@ -664,8 +695,8 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
                 onDownload={handleDownloadCurrent}
                 isLoading={state.isLoading}
               />
-            )}
-            {state.currentStep === 3 && (
+            </StepPane>
+            <StepPane inert={state.currentStep !== 3 ? true : undefined}>
               <Step3ContentFill
                 messages={state.messages}
                 onSendMessage={handleSendMessage}
@@ -673,8 +704,8 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
                 onDownload={handleDownloadCurrent}
                 isLoading={state.isLoading}
               />
-            )}
-          </StepSlide>
+            </StepPane>
+          </StepTrack>
         </OptionsPanel>
       </AppLayout>
       {user && tossClientKey && (
