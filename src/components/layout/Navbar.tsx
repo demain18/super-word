@@ -173,6 +173,22 @@ const CreditValue = styled.span`
   letter-spacing: 0.2px;
 `;
 
+// 이용권 숫자가 바뀔 때 위에서 굴러 내려오는 효과
+const rollDown = keyframes`
+  from { transform: translateY(-105%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+`;
+const RollWrap = styled.span`
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  line-height: 1.15;
+`;
+const Rolling = styled.span`
+  display: inline-block;
+  animation: ${rollDown} 300ms cubic-bezier(0.22, 0.61, 0.36, 1);
+`;
+
 function formatCount(n: number): string {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
@@ -530,7 +546,14 @@ export default function Navbar({
                 {user && typeof credits !== 'number' ? (
                   <CreditLoading />
                 ) : (
-                  `${formatCount(typeof credits === 'number' ? credits : 0)}회`
+                  <>
+                    <RollWrap>
+                      <Rolling key={typeof credits === 'number' ? credits : 0}>
+                        {formatCount(typeof credits === 'number' ? credits : 0)}
+                      </Rolling>
+                    </RollWrap>
+                    회
+                  </>
                 )}
               </CreditValue>
             </CreditBadge>
