@@ -159,13 +159,12 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // 표시/메시지 갱신만 담당. 자동 닫힘·나가기 애니메이션은 Toast가 직접 처리한다.
   const showToast = useCallback((msg: string) => {
     setToast(msg);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast(null), 3500);
   }, []);
+  const hideToast = useCallback(() => setToast(null), []);
 
   // 프로젝트는 브라우저(게스트) 단위로 식별 — 로그인과 무관하게 동일 목록을 본다.
   // guestId는 호출 시점에 getGuestId()로 직접 읽는다(렌더 중 ref 접근 회피).
@@ -591,6 +590,8 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         setAuthModal({ open: true, reportId });
         return false;
       }
+      // 누른 즉시 준비 토스트(실패/이용권부족이면 아래에서 거둠).
+      showToast('다운로드를 준비하고 있습니다…');
       try {
         const res = await fetch('/api/download', {
           method: 'POST',
@@ -599,20 +600,26 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         });
         const data = await res.json();
         if (res.status === 409 && data.error === 'NO_CREDITS') {
+          setToast(null);
           setCredits(typeof data.creditsRemaining === 'number' ? data.creditsRemaining : 0);
           setPurchaseDialog({ open: true, reportId });
           return false;
         }
         if (!res.ok) {
+          setToast(null);
           throw new Error(data.error || '다운로드 실패');
         }
-        if (data.consumed) {
-          showToast('이용권 1장을 소모하였습니다. 잠시 뒤 다운로드가 개시됩니다.');
-        }
+        // 차감 여부에 따라 메시지 갱신: 신규는 소모, 이미 받은 건 재다운로드(차감 없음).
+        showToast(
+          data.consumed
+            ? '이용권 1장을 소모했습니다. 다운로드가 시작됩니다.'
+            : '이미 받은 양식이에요. 이용권 차감 없이 다시 받습니다.'
+        );
         triggerBlobDownload(data.signedUrl, data.filename);
         if (typeof data.creditsRemaining === 'number') setCredits(data.creditsRemaining);
         return true;
       } catch (e) {
+        setToast(null);
         alert(e instanceof Error ? e.message : '다운로드에 실패했습니다.');
         return false;
       }
@@ -766,7 +773,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         onClose={() => setAuthModal({ open: false })}
         onGoogle={() => handleLoginIntent(authModal.reportId)}
       />
-      {toast && <Toast message={toast} />}
+      {toast && <Toast message={toast} onClose={hideToast} />}
     </>
   );
 }
