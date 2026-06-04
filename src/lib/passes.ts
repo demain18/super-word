@@ -125,6 +125,7 @@ export interface DownloadHistoryRow {
         filename: string;
         version: number;
         label: string | null;
+        title: string | null;
         session_id: string;
         report_type: string | null;
       }
@@ -133,6 +134,7 @@ export interface DownloadHistoryRow {
         filename: string;
         version: number;
         label: string | null;
+        title: string | null;
         session_id: string;
         report_type: string | null;
       }>
@@ -144,7 +146,7 @@ export async function listDownloadHistory(userId: string): Promise<DownloadHisto
   const { data, error } = await svc
     .from('downloads')
     .select(
-      'id, credits_used, created_at, report:reports ( id, filename, version, label, session_id, report_type )'
+      'id, credits_used, created_at, report:reports ( id, filename, version, label, title, session_id, report_type )'
     )
     .eq('user_id', userId)
     .order('created_at', { ascending: false });

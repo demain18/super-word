@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import SiteFooter from '@/components/layout/SiteFooter';
+import BackButton from '@/components/common/BackButton';
 
 export const metadata = {
   title: '이용약관 | Super Word',
@@ -19,9 +20,7 @@ export default function TermsPage() {
       }}
     >
       <div style={{ marginBottom: 18 }}>
-        <Link href="/" style={{ color: '#565959', fontSize: 13 }}>
-          ← 홈으로
-        </Link>
+        <BackButton />
       </div>
       <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 8 }}>이용약관</h1>
       <p style={{ color: '#565959', fontSize: 13, marginBottom: 28 }}>

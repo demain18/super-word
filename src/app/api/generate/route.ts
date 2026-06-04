@@ -4,7 +4,7 @@ import { Packer } from 'docx';
 import { buildStyleFeedbackPrompt, buildContentFillPrompt, buildCustomFeedbackPrompt } from '@/lib/prompts';
 import { buildDocument, buildDocumentFromAI, buildDocumentWithReplacements, extractPlaceholders, AIDocumentContent } from '@/lib/docx-builder';
 import { generateTemplatePreviewHtml, generateAIPreviewHtml, generateReplacedPreviewHtml } from '@/lib/html-preview';
-import { ReportType, StyleType } from '@/types';
+import { ReportType, StyleType, REPORT_TYPES } from '@/types';
 import { randomUUID } from 'crypto';
 import { createClient as createSupabaseServerClient } from '@/lib/supabase/server';
 import { saveReport } from '@/lib/reports';
@@ -60,15 +60,27 @@ export async function POST(req: NextRequest) {
     const sid = sessionId || randomUUID();
     const nextVersion = (currentVersion || 0) + 1;
     const filename = `report_v${nextVersion}.docx`;
+    const reportLabel =
+      REPORT_TYPES.find((r) => r.id === reportType)?.label ?? '보고서';
 
-    const persist = async (buffer: Buffer, label: string, styleForRow?: StyleType) => {
+    const persist = async (
+      buffer: Buffer,
+      opts: {
+        label: string;
+        style?: StyleType | null;
+        title?: string | null;
+        previewHtml?: string | null;
+      }
+    ) => {
       const row = await saveReport({
         userId: user.id,
         sessionId: sid,
         version: nextVersion,
         reportType: (reportType as string) ?? null,
-        style: styleForRow ?? null,
-        label,
+        style: opts.style ?? null,
+        label: opts.label,
+        title: opts.title ?? reportLabel,
+        previewHtml: opts.previewHtml ?? null,
         buffer,
         filename,
       });
@@ -79,8 +91,11 @@ export async function POST(req: NextRequest) {
       case 'generate': {
         const doc = buildDocument(reportType as ReportType);
         const buffer = await Packer.toBuffer(doc);
-        const reportId = await persist(buffer, labelForAction('generate'));
         const previewHtml = generateTemplatePreviewHtml(reportType as ReportType);
+        const reportId = await persist(buffer, {
+          label: labelForAction('generate'),
+          previewHtml,
+        });
 
         return NextResponse.json({
           sessionId: sid,
@@ -97,8 +112,12 @@ export async function POST(req: NextRequest) {
 
         const doc = buildDocument(reportType as ReportType, styleT);
         const buffer = await Packer.toBuffer(doc);
-        const reportId = await persist(buffer, labelForAction('style', styleT), styleT);
         const previewHtml = generateTemplatePreviewHtml(reportType as ReportType, styleT);
+        const reportId = await persist(buffer, {
+          label: labelForAction('style', styleT),
+          style: styleT,
+          previewHtml,
+        });
 
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
         const prompt = buildStyleFeedbackPrompt(reportType as ReportType, styleT, history, customFeedback);
@@ -136,8 +155,13 @@ export async function POST(req: NextRequest) {
 
         const doc = buildDocumentFromAI(reportType as ReportType, aiContent, currentStyle);
         const buffer = await Packer.toBuffer(doc);
-        const reportId = await persist(buffer, labelForAction('custom-feedback'), currentStyle);
         const previewHtml = generateAIPreviewHtml(reportType as ReportType, aiContent, currentStyle);
+        const reportId = await persist(buffer, {
+          label: labelForAction('custom-feedback'),
+          style: currentStyle,
+          title: aiContent.title || reportLabel,
+          previewHtml,
+        });
 
         return NextResponse.json({
           sessionId: sid,
@@ -157,7 +181,7 @@ export async function POST(req: NextRequest) {
         const result = await model.generateContent(prompt);
         const responseText = result.response.text();
 
-        const parsed = parseAIResponse<{ replacements: Record<string, string>; message?: string }>(responseText);
+        const parsed = parseAIResponse<{ replacements: Record<string, string>; message?: string; title?: string }>(responseText);
         if (!parsed?.replacements) {
           return NextResponse.json({
             sessionId: sid,
@@ -168,8 +192,13 @@ export async function POST(req: NextRequest) {
 
         const doc = buildDocumentWithReplacements(reportType as ReportType, currentStyle, parsed.replacements);
         const buffer = await Packer.toBuffer(doc);
-        const reportId = await persist(buffer, labelForAction('content'), currentStyle);
         const previewHtml = generateReplacedPreviewHtml(reportType as ReportType, currentStyle, parsed.replacements);
+        const reportId = await persist(buffer, {
+          label: labelForAction('content'),
+          style: currentStyle,
+          title: parsed.title || reportLabel,
+          previewHtml,
+        });
 
         return NextResponse.json({
           sessionId: sid,

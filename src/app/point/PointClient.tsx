@@ -440,7 +440,7 @@ export default function PointClient({
                   return (
                     <tr key={row.id}>
                       <td>{formatDateTime(row.created_at)}</td>
-                      <td>{r?.label || r?.filename || '—'}</td>
+                      <td>{r?.title || r?.label || r?.filename || '—'}</td>
                       <td>v{r?.version ?? '—'}</td>
                       <td>{row.credits_used}회</td>
                       <td style={{ textAlign: 'right' }}>
