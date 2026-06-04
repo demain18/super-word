@@ -1,8 +1,11 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import styled from '@emotion/styled';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { theme } from '@/styles/theme';
+import { COMPANY_INFO } from '@/lib/company-info';
 import type { User } from '@supabase/supabase-js';
 
 interface NavbarProps {
@@ -268,6 +271,163 @@ const StepDivider = styled.span`
   font-size: 16px;
 `;
 
+const RightArea = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`;
+
+const PolicyWrap = styled.div`
+  position: relative;
+`;
+
+const PolicyTrigger = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid #565959;
+  border-radius: 3px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color ${theme.transitions.fast}, background ${theme.transitions.fast};
+
+  &:hover {
+    border-color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
+  }
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 3px 2px rgba(228, 121, 17, 0.5);
+  }
+`;
+
+const Chevron = styled.span<{ $open: boolean }>`
+  display: inline-block;
+  font-size: 9px;
+  transition: transform ${theme.transitions.fast};
+  transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')});
+`;
+
+const PolicyPanel = styled.div`
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 300px;
+  background: #ffffff;
+  border: 1px solid ${theme.colors.cardBorder};
+  border-radius: 8px;
+  box-shadow: ${theme.shadows.cardHover};
+  padding: 10px;
+  z-index: 1100;
+  color: ${theme.colors.textPrimary};
+
+  @media (max-width: ${theme.breakpoints.mobile}) {
+    width: calc(100vw - 36px);
+    max-width: 300px;
+  }
+`;
+
+const PolicyItem = styled(Link)`
+  display: block;
+  padding: 9px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: ${theme.colors.textPrimary};
+  text-decoration: none;
+
+  &:hover {
+    background: ${theme.colors.backgroundLight};
+  }
+`;
+
+const PanelDivider = styled.div`
+  height: 1px;
+  background: ${theme.colors.cardBorder};
+  margin: 8px 4px;
+`;
+
+const BizBlock = styled.div`
+  padding: 2px 10px 6px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: ${theme.colors.textSecondary};
+`;
+
+const BizName = styled.div`
+  font-weight: 700;
+  color: ${theme.colors.textPrimary};
+  font-size: 12px;
+  margin-bottom: 3px;
+`;
+
+function PolicyMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <PolicyWrap ref={ref}>
+      <PolicyTrigger
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        약관·정책
+        <Chevron $open={open} aria-hidden>
+          ▾
+        </Chevron>
+      </PolicyTrigger>
+      {open && (
+        <PolicyPanel role="menu">
+          <PolicyItem href="/terms" role="menuitem" onClick={() => setOpen(false)}>
+            이용약관
+          </PolicyItem>
+          <PolicyItem href="/privacy" role="menuitem" onClick={() => setOpen(false)}>
+            개인정보처리방침
+          </PolicyItem>
+          <PolicyItem href="/refund" role="menuitem" onClick={() => setOpen(false)}>
+            환불 정책
+          </PolicyItem>
+          <PanelDivider />
+          <BizBlock>
+            <BizName>{COMPANY_INFO.name}</BizName>
+            대표자 {COMPANY_INFO.ceo} · 사업자등록번호 {COMPANY_INFO.bizRegNo}
+            <br />
+            통신판매업신고 {COMPANY_INFO.mailOrderNo}
+            <br />
+            {COMPANY_INFO.address}
+            <br />
+            전화 {COMPANY_INFO.phone}
+            <br />
+            이메일 {COMPANY_INFO.email}
+          </BizBlock>
+        </PolicyPanel>
+      )}
+    </PolicyWrap>
+  );
+}
+
 const STEPS = [
   { num: 1, label: '보고서 선택' },
   { num: 2, label: '양식 스타일' },
@@ -293,26 +453,29 @@ export default function Navbar({ currentStep, user, onSignOut, credits }: Navbar
         <Logo onClick={() => router.push('/')}>
           <LogoAccent>Super</LogoAccent>Word
         </Logo>
-        {user && (
-          <UserMenu>
-            <CreditBadge type="button" onClick={() => router.push('/point')} title="이용권 페이지로 이동">
-              <CreditLabel>사용권</CreditLabel>
-              <CreditDivider aria-hidden />
-              <CreditValue>{formatCount(typeof credits === 'number' ? credits : 0)}회</CreditValue>
-            </CreditBadge>
-            <UserInfo>
-              {avatarUrl ? (
-                <Avatar src={avatarUrl} alt={displayName} referrerPolicy="no-referrer" />
-              ) : (
-                <AvatarFallback>{initial}</AvatarFallback>
-              )}
-              <UserName>{displayName}</UserName>
-            </UserInfo>
-            <SignOutButton type="button" onClick={onSignOut}>
-              로그아웃
-            </SignOutButton>
-          </UserMenu>
-        )}
+        <RightArea>
+          <PolicyMenu />
+          {user && (
+            <UserMenu>
+              <CreditBadge type="button" onClick={() => router.push('/point')} title="이용권 페이지로 이동">
+                <CreditLabel>이용권</CreditLabel>
+                <CreditDivider aria-hidden />
+                <CreditValue>{formatCount(typeof credits === 'number' ? credits : 0)}회</CreditValue>
+              </CreditBadge>
+              <UserInfo>
+                {avatarUrl ? (
+                  <Avatar src={avatarUrl} alt={displayName} referrerPolicy="no-referrer" />
+                ) : (
+                  <AvatarFallback>{initial}</AvatarFallback>
+                )}
+                <UserName>{displayName}</UserName>
+              </UserInfo>
+              <SignOutButton type="button" onClick={onSignOut}>
+                로그아웃
+              </SignOutButton>
+            </UserMenu>
+          )}
+        </RightArea>
       </Nav>
       {showSteps && (
         <SubNav>
