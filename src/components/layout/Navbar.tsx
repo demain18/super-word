@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import styled from '@emotion/styled';
+import { keyframes } from '@emotion/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { theme } from '@/styles/theme';
@@ -12,6 +13,7 @@ interface NavbarProps {
   currentStep: 1 | 2 | 3 | null;
   user: User | null;
   onSignOut: () => void;
+  onSignIn?: () => void;
   credits?: number | null;
 }
 
@@ -63,11 +65,18 @@ const AvatarFallback = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  background: ${theme.colors.primary};
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
+  background: ${theme.colors.secondaryHover};
+  color: #d8dde3;
 `;
+
+/** 로그인 전·프로필 사진 없음 상태에서 쓰는 사람 실루엣 placeholder 아이콘. */
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden focusable="false">
+      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+    </svg>
+  );
+}
 
 const UserName = styled.span`
   font-size: 13px;
@@ -163,6 +172,42 @@ const CreditValue = styled.span`
 
 function formatCount(n: number): string {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+const blink = keyframes`
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+`;
+
+const Dots = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px;
+
+  span {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #6b3a00;
+    animation: ${blink} 1.2s infinite both;
+  }
+  span:nth-of-type(2) {
+    animation-delay: 0.2s;
+  }
+  span:nth-of-type(3) {
+    animation-delay: 0.4s;
+  }
+`;
+
+function CreditLoading() {
+  return (
+    <Dots aria-label="이용권 불러오는 중" role="status">
+      <span />
+      <span />
+      <span />
+    </Dots>
+  );
 }
 
 const SignOutButton = styled.button`
@@ -434,7 +479,7 @@ const STEPS = [
   { num: 3, label: '내용 작성' },
 ];
 
-export default function Navbar({ currentStep, user, onSignOut, credits }: NavbarProps) {
+export default function Navbar({ currentStep, user, onSignOut, onSignIn, credits }: NavbarProps) {
   const router = useRouter();
   const meta = (user?.user_metadata ?? {}) as {
     full_name?: string;
@@ -444,7 +489,6 @@ export default function Navbar({ currentStep, user, onSignOut, credits }: Navbar
   };
   const displayName = meta.full_name || meta.name || user?.email || '';
   const avatarUrl = meta.avatar_url || meta.picture || '';
-  const initial = (displayName || '?').trim().charAt(0).toUpperCase();
   const showSteps = currentStep !== null;
 
   return (
@@ -455,26 +499,42 @@ export default function Navbar({ currentStep, user, onSignOut, credits }: Navbar
         </Logo>
         <RightArea>
           <PolicyMenu />
-          {user && (
-            <UserMenu>
-              <CreditBadge type="button" onClick={() => router.push('/point')} title="이용권 페이지로 이동">
-                <CreditLabel>이용권</CreditLabel>
-                <CreditDivider aria-hidden />
-                <CreditValue>{formatCount(typeof credits === 'number' ? credits : 0)}회</CreditValue>
-              </CreditBadge>
-              <UserInfo>
-                {avatarUrl ? (
-                  <Avatar src={avatarUrl} alt={displayName} referrerPolicy="no-referrer" />
+          <UserMenu>
+            <CreditBadge
+              type="button"
+              onClick={user ? () => router.push('/point') : onSignIn}
+              title={user ? '이용권 페이지로 이동' : '로그인하고 이용권 구매하기'}
+            >
+              <CreditLabel>이용권</CreditLabel>
+              <CreditDivider aria-hidden />
+              <CreditValue>
+                {user && typeof credits !== 'number' ? (
+                  <CreditLoading />
                 ) : (
-                  <AvatarFallback>{initial}</AvatarFallback>
+                  `${formatCount(typeof credits === 'number' ? credits : 0)}회`
                 )}
-                <UserName>{displayName}</UserName>
-              </UserInfo>
+              </CreditValue>
+            </CreditBadge>
+            <UserInfo>
+              {avatarUrl ? (
+                <Avatar src={avatarUrl} alt={displayName} referrerPolicy="no-referrer" />
+              ) : (
+                <AvatarFallback aria-label="프로필">
+                  <PersonIcon />
+                </AvatarFallback>
+              )}
+              {displayName && <UserName>{displayName}</UserName>}
+            </UserInfo>
+            {user ? (
               <SignOutButton type="button" onClick={onSignOut}>
                 로그아웃
               </SignOutButton>
-            </UserMenu>
-          )}
+            ) : (
+              <SignOutButton type="button" onClick={onSignIn}>
+                로그인
+              </SignOutButton>
+            )}
+          </UserMenu>
         </RightArea>
       </Nav>
       {showSteps && (

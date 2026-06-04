@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import EmotionRegistry from './EmotionRegistry';
+import DevAnnotation from '@/components/dev/DevAnnotation';
 
 export const metadata: Metadata = {
   title: '슈퍼워드 | SuperWord - AI 보고서 자동 생성',
@@ -17,6 +18,7 @@ export default function RootLayout({
     <html lang="ko">
       <body>
         <EmotionRegistry>{children}</EmotionRegistry>
+        <DevAnnotation />
       </body>
     </html>
   );

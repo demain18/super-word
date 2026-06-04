@@ -27,11 +27,13 @@ const Panel = styled.div`
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 500px;
+  height: 100%;
+  min-height: 0;
 
   @media (max-width: ${theme.breakpoints.tablet}) {
     flex: none;
     width: 100%;
+    height: auto;
     min-height: 400px;
   }
 `;
@@ -121,7 +123,7 @@ const PreviewFrame = styled.iframe`
   width: 100%;
   height: 100%;
   border: none;
-  min-height: 600px;
+  min-height: 0;
 
   @media (max-width: ${theme.breakpoints.tablet}) {
     min-height: 450px;

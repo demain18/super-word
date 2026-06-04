@@ -416,20 +416,19 @@ function wrapPage(content: string, s: StyleSettings): string {
     background: #f5f5f5;
     display: flex;
     justify-content: center;
-    padding: 20px 0;
+    padding: 14px;
   }
   .page {
-    width: 210mm;
-    min-height: 297mm;
+    width: 100%;
+    max-width: 820px;
+    min-height: auto;
     background: white;
-    padding: 40px 48px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    padding: 36px 44px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
     font-family: ${s.font};
   }
   @media (max-width: 800px) {
     .page {
-      width: 100%;
-      min-height: auto;
       padding: 24px 20px;
     }
   }
