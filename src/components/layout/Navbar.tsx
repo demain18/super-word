@@ -14,6 +14,7 @@ interface NavbarProps {
   user: User | null;
   onSignOut: () => void;
   onSignIn?: () => void;
+  onStepNavigate?: (step: 1 | 2 | 3) => void;
   credits?: number | null;
 }
 
@@ -262,7 +263,7 @@ const SubNav = styled.div`
   gap: 0;
 `;
 
-const Step = styled.div<{ $active: boolean; $completed: boolean }>`
+const Step = styled.div<{ $active: boolean; $completed: boolean; $clickable: boolean }>`
   color: ${({ $active, $completed }) =>
     $active ? '#ffffff' : $completed ? theme.colors.primary : '#cccccc'};
   font-size: 13px;
@@ -272,7 +273,15 @@ const Step = styled.div<{ $active: boolean; $completed: boolean }>`
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: default;
+  border-radius: 4px;
+  cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
+  transition: background ${theme.transitions.fast};
+
+  ${({ $clickable }) =>
+    $clickable &&
+    `
+    &:hover { background: rgba(255, 255, 255, 0.08); }
+  `}
 
   ${({ $active }) =>
     $active &&
@@ -479,7 +488,14 @@ const STEPS = [
   { num: 3, label: '내용 작성' },
 ];
 
-export default function Navbar({ currentStep, user, onSignOut, onSignIn, credits }: NavbarProps) {
+export default function Navbar({
+  currentStep,
+  user,
+  onSignOut,
+  onSignIn,
+  onStepNavigate,
+  credits,
+}: NavbarProps) {
   const router = useRouter();
   const meta = (user?.user_metadata ?? {}) as {
     full_name?: string;
@@ -539,23 +555,31 @@ export default function Navbar({ currentStep, user, onSignOut, onSignIn, credits
       </Nav>
       {showSteps && (
         <SubNav>
-          {STEPS.map((step, i) => (
-            <span key={step.num} style={{ display: 'flex', alignItems: 'center' }}>
-              <Step
-                $active={currentStep === step.num}
-                $completed={currentStep! > step.num}
-              >
-                <StepNumber
+          {STEPS.map((step, i) => {
+            const completed = currentStep! > step.num;
+            const clickable = completed && !!onStepNavigate;
+            return (
+              <span key={step.num} style={{ display: 'flex', alignItems: 'center' }}>
+                <Step
                   $active={currentStep === step.num}
-                  $completed={currentStep! > step.num}
+                  $completed={completed}
+                  $clickable={clickable}
+                  onClick={
+                    clickable
+                      ? () => onStepNavigate?.(step.num as 1 | 2 | 3)
+                      : undefined
+                  }
+                  title={clickable ? `${step.label} 단계로 돌아가기` : undefined}
                 >
-                  {currentStep! > step.num ? '✓' : step.num}
-                </StepNumber>
-                {step.label}
-              </Step>
-              {i < STEPS.length - 1 && <StepDivider>›</StepDivider>}
-            </span>
-          ))}
+                  <StepNumber $active={currentStep === step.num} $completed={completed}>
+                    {completed ? '✓' : step.num}
+                  </StepNumber>
+                  {step.label}
+                </Step>
+                {i < STEPS.length - 1 && <StepDivider>›</StepDivider>}
+              </span>
+            );
+          })}
         </SubNav>
       )}
     </>

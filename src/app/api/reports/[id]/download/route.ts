@@ -20,11 +20,12 @@ export async function GET(
       return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
     }
 
-    const report = await findReportById(id, user.id);
+    const report = await findReportById(id);
     if (!report) {
       return NextResponse.json({ error: 'REPORT_NOT_FOUND' }, { status: 404 });
     }
 
+    // 과거 이 계정으로 다운로드(결제)한 이력이 있어야 재다운로드 허용.
     const existing = await findDownloadForReport(user.id, id);
     if (!existing) {
       return NextResponse.json(

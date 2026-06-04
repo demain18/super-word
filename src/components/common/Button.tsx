@@ -26,13 +26,21 @@ const variantStyles = {
     }
   `,
   cta: `
-    background: #FFD814;
-    border: 1px solid #FCD200;
+    background: linear-gradient(to bottom, #FFE03D 0%, #FFD814 55%, #F7C600 100%);
+    border: 1px solid #E5B800;
     color: #0F1111;
     border-radius: 20px;
+    transition: box-shadow 220ms ease, filter 220ms ease, transform 120ms ease;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.16);
     &:hover:not(:disabled) {
-      background: #F7CA00;
-      border-color: #F2C200;
+      filter: brightness(1.03);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.08), 0 5px 14px rgba(0, 0, 0, 0.2);
+    }
+    &:active:not(:disabled) {
+      transform: translateY(1px);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.12);
     }
   `,
   secondary: `

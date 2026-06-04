@@ -21,12 +21,14 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const reportId = String(body.reportId || '');
-    if (!reportId) {
+    const guestId = String(body.guestId || '');
+    if (!reportId || !guestId) {
       return NextResponse.json({ error: 'BAD_REQUEST' }, { status: 400 });
     }
 
-    const report = await findReportById(reportId, user.id);
-    if (!report) {
+    // 다운로드는 로그인 계정에 과금하되, 대상 문서는 이 브라우저(게스트)의 것이어야 한다.
+    const report = await findReportById(reportId);
+    if (!report || report.guest_id !== guestId) {
       return NextResponse.json({ error: 'REPORT_NOT_FOUND' }, { status: 404 });
     }
 

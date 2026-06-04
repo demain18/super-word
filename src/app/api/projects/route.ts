@@ -1,26 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient as createSupabaseServerClient } from '@/lib/supabase/server';
 import { listProjects, getProjectVersions } from '@/lib/reports';
 
-// GET /api/projects            → 현재 사용자의 프로젝트(세션) 요약 목록
+// 프로젝트는 브라우저(게스트) 단위 — 로그인 무관하게 x-guest-id로 조회.
+// GET /api/projects            → 이 브라우저의 프로젝트(세션) 요약 목록
 // GET /api/projects?sessionId=X → 해당 세션의 전체 버전(복원용)
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+    const guestId = req.headers.get('x-guest-id');
+    if (!guestId) {
+      return NextResponse.json({ projects: [] });
     }
 
     const sessionId = req.nextUrl.searchParams.get('sessionId');
     if (sessionId) {
-      const versions = await getProjectVersions(user.id, sessionId);
+      const versions = await getProjectVersions(guestId, sessionId);
       return NextResponse.json({ sessionId, versions });
     }
 
-    const projects = await listProjects(user.id);
+    const projects = await listProjects(guestId);
     return NextResponse.json({ projects });
   } catch (error) {
     console.error('Projects API error:', error);
