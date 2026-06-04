@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Packer } from 'docx';
-import { buildStyleFeedbackPrompt, buildContentFillPrompt, buildCustomFeedbackPrompt } from '@/lib/prompts';
+import { buildStyleFeedbackPrompt, buildContentFillPrompt, buildCustomFeedbackPrompt, buildCustomFormPrompt, buildCustomEditPrompt } from '@/lib/prompts';
 import { buildDocument, buildDocumentFromAI, buildDocumentWithReplacements, extractPlaceholders, AIDocumentContent } from '@/lib/docx-builder';
 import { generateTemplatePreviewHtml, generateAIPreviewHtml, generateReplacedPreviewHtml } from '@/lib/html-preview';
 import { ReportType, StyleType, REPORT_TYPES } from '@/types';
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
         style?: StyleType | null;
         title?: string | null;
         previewHtml?: string | null;
+        aiContent?: unknown;
       }
     ) => {
       const row = await saveReport({
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
         label: opts.label,
         title: opts.title ?? reportLabel,
         previewHtml: opts.previewHtml ?? null,
+        aiContent: opts.aiContent ?? null,
         buffer,
         filename,
       });
@@ -202,6 +204,106 @@ export async function POST(req: NextRequest) {
           reportId,
           previewHtml,
           message: parsed.message || '양식 내용이 작성되었습니다.',
+          version: nextVersion,
+        });
+      }
+
+      // ── 커스텀(프롬프트 기반) 양식 ──
+      case 'custom-generate': {
+        const userPrompt = String(body.prompt || '').trim();
+        if (!userPrompt) {
+          return NextResponse.json({ error: 'EMPTY_PROMPT' }, { status: 400 });
+        }
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const result = await model.generateContent(buildCustomFormPrompt(userPrompt));
+        const ai = parseAIResponse<AIDocumentContent & { message?: string }>(result.response.text());
+        if (!ai?.sections) {
+          return NextResponse.json({
+            sessionId: sid,
+            message: '양식 생성에 실패했습니다. 다시 시도해주세요.',
+            error: 'parse_error',
+          });
+        }
+        const doc = buildDocumentFromAI(null, ai);
+        const buffer = await Packer.toBuffer(doc);
+        const previewHtml = generateAIPreviewHtml(null, ai);
+        const reportId = await persist(buffer, {
+          label: '맞춤 양식',
+          title: ai.title || reportLabel,
+          previewHtml,
+          aiContent: ai,
+        });
+        return NextResponse.json({
+          sessionId: sid,
+          reportId,
+          previewHtml,
+          aiContent: ai,
+          message: ai.message || '맞춤 양식을 생성했습니다.',
+          version: nextVersion,
+        });
+      }
+
+      case 'custom-style': {
+        const currentStyle = body.style as StyleType | undefined;
+        const ai = body.aiContent as AIDocumentContent | undefined;
+        if (!ai?.sections) {
+          return NextResponse.json({ error: 'MISSING_CONTENT' }, { status: 400 });
+        }
+        const doc = buildDocumentFromAI(null, ai, currentStyle);
+        const buffer = await Packer.toBuffer(doc);
+        const previewHtml = generateAIPreviewHtml(null, ai, currentStyle);
+        const reportId = await persist(buffer, {
+          label: labelForAction('style', currentStyle),
+          style: currentStyle,
+          title: ai.title || reportLabel,
+          previewHtml,
+          aiContent: ai,
+        });
+        return NextResponse.json({
+          sessionId: sid,
+          reportId,
+          previewHtml,
+          aiContent: ai,
+          message: '스타일을 적용했습니다.',
+          version: nextVersion,
+        });
+      }
+
+      case 'custom-edit': {
+        const currentStyle = body.currentStyle as StyleType | undefined;
+        const ai = body.aiContent as AIDocumentContent | undefined;
+        const instruction = String(body.instruction || '').trim();
+        if (!ai?.sections || !instruction) {
+          return NextResponse.json({ error: 'MISSING_CONTENT' }, { status: 400 });
+        }
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const result = await model.generateContent(
+          buildCustomEditPrompt(JSON.stringify(ai), instruction)
+        );
+        const edited = parseAIResponse<AIDocumentContent & { message?: string }>(result.response.text());
+        if (!edited?.sections) {
+          return NextResponse.json({
+            sessionId: sid,
+            message: '수정에 실패했습니다. 다시 시도해주세요.',
+            error: 'parse_error',
+          });
+        }
+        const doc = buildDocumentFromAI(null, edited, currentStyle);
+        const buffer = await Packer.toBuffer(doc);
+        const previewHtml = generateAIPreviewHtml(null, edited, currentStyle);
+        const reportId = await persist(buffer, {
+          label: labelForAction('content'),
+          style: currentStyle,
+          title: edited.title || reportLabel,
+          previewHtml,
+          aiContent: edited,
+        });
+        return NextResponse.json({
+          sessionId: sid,
+          reportId,
+          previewHtml,
+          aiContent: edited,
+          message: edited.message || '양식을 수정했습니다.',
           version: nextVersion,
         });
       }

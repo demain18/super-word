@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import styled from '@emotion/styled';
 import { theme } from '@/styles/theme';
 import Card from '@/components/common/Card';
@@ -10,6 +11,7 @@ interface Step1Props {
   selectedReport: ReportType | null;
   onSelect: (type: ReportType) => void;
   onNext: () => void;
+  onCustomGenerate: (prompt: string) => Promise<boolean>;
   isAuthenticated: boolean;
   onSignIn: () => void;
 }
@@ -68,6 +70,50 @@ const ActionArea = styled.div`
   gap: 10px;
 `;
 
+const CustomSection = styled.div`
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px dashed ${theme.colors.borderGray};
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const CustomLabel = styled.div`
+  font-size: ${theme.typography.fontSize.sm};
+  font-weight: ${theme.typography.fontWeight.bold};
+  color: ${theme.colors.textPrimary};
+`;
+
+const CustomHint = styled.div`
+  font-size: 12px;
+  color: ${theme.colors.textSecondary};
+`;
+
+const CustomRow = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+`;
+
+const PromptInput = styled.input`
+  flex: 1;
+  min-width: 0;
+  border: 1px solid ${theme.colors.borderGray};
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: ${theme.typography.fontSize.base};
+  font-family: inherit;
+  line-height: 1.5;
+  color: ${theme.colors.textPrimary};
+
+  &:focus {
+    outline: none;
+    border-color: ${theme.colors.primary};
+    box-shadow: 0 0 0 2px rgba(255, 153, 0, 0.25);
+  }
+`;
+
 const GoogleButton = styled.button`
   width: 100%;
   display: inline-flex;
@@ -118,9 +164,22 @@ export default function Step1ReportSelect({
   selectedReport,
   onSelect,
   onNext,
+  onCustomGenerate,
   isAuthenticated,
   onSignIn,
 }: Step1Props) {
+  const [prompt, setPrompt] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submitPrompt = async () => {
+    if (!prompt.trim() || submitting) return;
+    setSubmitting(true);
+    // 생성·캐러셀 이동까지 끝난 뒤(성공 시)에 입력칸을 비운다.
+    const ok = await onCustomGenerate(prompt);
+    if (ok) setPrompt('');
+    setSubmitting(false);
+  };
+
   return (
     <Container>
       <div>
@@ -148,6 +207,33 @@ export default function Step1ReportSelect({
           </CardContent>
         </Card>
       ))}
+
+      <CustomSection>
+        <CustomLabel>또는, 원하는 양식을 직접 설명해서 만들기</CustomLabel>
+        <CustomHint>예: &ldquo;거래처 방문 일정과 준비물을 점검하는 표 중심의 체크리스트&rdquo;</CustomHint>
+        <CustomRow>
+          <PromptInput
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitPrompt();
+              }
+            }}
+            readOnly={submitting}
+            placeholder="만들고 싶은 문서 양식을 자유롭게 설명하세요"
+          />
+          <Button
+            variant="primary"
+            size="md"
+            disabled={!prompt.trim() || submitting}
+            onClick={submitPrompt}
+          >
+            {submitting ? '생성 중…' : '만들기'}
+          </Button>
+        </CustomRow>
+      </CustomSection>
 
       <ActionArea>
         <Button
