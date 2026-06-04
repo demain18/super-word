@@ -6,7 +6,6 @@ import { buildDocument, buildDocumentFromAI, buildDocumentWithReplacements, extr
 import { generateTemplatePreviewHtml, generateAIPreviewHtml, generateReplacedPreviewHtml } from '@/lib/html-preview';
 import { ReportType, StyleType, REPORT_TYPES } from '@/types';
 import { randomUUID } from 'crypto';
-import { createClient as createSupabaseServerClient } from '@/lib/supabase/server';
 import { saveReport } from '@/lib/reports';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -46,12 +45,10 @@ function labelForAction(
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+    // 프로젝트는 브라우저(게스트) 단위로 보관한다 — 로그인 없이 생성 가능.
+    const guestId = req.headers.get('x-guest-id');
+    if (!guestId) {
+      return NextResponse.json({ error: 'MISSING_GUEST' }, { status: 400 });
     }
 
     const body = await req.json();
@@ -73,7 +70,7 @@ export async function POST(req: NextRequest) {
       }
     ) => {
       const row = await saveReport({
-        userId: user.id,
+        guestId,
         sessionId: sid,
         version: nextVersion,
         reportType: (reportType as string) ?? null,

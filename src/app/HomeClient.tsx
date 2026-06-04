@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import styled from '@emotion/styled';
+import { keyframes } from '@emotion/react';
 import { theme } from '@/styles/theme';
 import Navbar from '@/components/layout/Navbar';
 import PreviewPanel from '@/components/PreviewPanel';
@@ -55,6 +56,18 @@ const OptionsPanel = styled.div`
   }
 `;
 
+const stepSlideIn = keyframes`
+  from { opacity: 0; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+`;
+
+const StepSlide = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: ${stepSlideIn} 300ms cubic-bezier(0.22, 0.61, 0.36, 1);
+`;
+
 const LOADING_MESSAGES = {
   generate: [
     '양식 구조를 설계하고 있습니다...',
@@ -87,19 +100,21 @@ interface HomeClientProps {
 
 // 로그인 리다이렉트 전후로 작업 상태를 보존하기 위한 로컬 임시저장 키.
 const DRAFT_KEY = 'sw_pending_draft';
-// 로그인 직후 익명 작업을 실명 계정으로 이관하기 위해 익명 세션 토큰을 잠시 보관하는 키.
-const CLAIM_KEY = 'sw_pending_claim';
+// 프로젝트를 브라우저 단위로 식별하는 게스트 ID(로그인과 무관, 영구 보관).
+const GUEST_KEY = 'sw_guest_id';
 
-function isAnonymous(u: User | null): boolean {
-  if (!u) return false;
-  // 익명→구글 연결 직후 is_anonymous 플래그가 늦게 갱신되는 경우가 있어,
-  // 이메일이나 익명이 아닌 identity가 붙어 있으면 실명 회원으로 간주한다.
-  const hasRealIdentity =
-    !!u.email ||
-    (Array.isArray(u.identities) &&
-      u.identities.some((i) => i.provider && i.provider !== 'anonymous'));
-  if (hasRealIdentity) return false;
-  return (u as unknown as { is_anonymous?: boolean }).is_anonymous === true;
+function getGuestId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    let id = window.localStorage.getItem(GUEST_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      window.localStorage.setItem(GUEST_KEY, id);
+    }
+    return id;
+  } catch {
+    return '';
+  }
 }
 
 const initialAppState: AppState = {
@@ -126,16 +141,14 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
 
-  // 실명 유저 = 세션이 있고 익명이 아닌 경우. 익명 세션은 UI상 "로그아웃"처럼 취급한다.
-  const isRealUser = !!user && !isAnonymous(user);
+  // 프로젝트는 브라우저(게스트) 단위로 식별 — 로그인과 무관하게 동일 목록을 본다.
+  // guestId는 호출 시점에 getGuestId()로 직접 읽는다(렌더 중 ref 접근 회피).
 
   // 비동기 이용권 fetch가 로그아웃 이후 늦게 resolve돼 옛 값을 덮어쓰는 레이스를 막기 위한 가드.
   const userRef = useRef<User | null>(initialUser);
-  const isRealUserRef = useRef<boolean>(isRealUser);
   useEffect(() => {
     userRef.current = user;
-    isRealUserRef.current = isRealUser;
-  }, [user, isRealUser]);
+  }, [user]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -144,23 +157,6 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     });
     return () => sub.subscription.unsubscribe();
   }, []);
-
-  // 비회원도 곧바로 익명 세션을 갖도록 마운트 시 1회 보장한다.
-  // 이미 세션(쿠키)이 있으면 ensureSession이 그대로 재사용하므로 anon uid가 유지되어
-  // 새로고침해도 최근 프로젝트 목록이 사라지지 않는다.
-  useEffect(() => {
-    if (initialUser) return;
-    void ensureSession();
-    // ensureSession은 아래에서 useCallback으로 정의되며 마운트 동안 안정적이다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (user) return;
-    setState(initialAppState);
-    setPreviewHtml(null);
-    setCredits(null);
-  }, [user]);
 
   const refreshCredits = useCallback(async () => {
     try {
@@ -177,18 +173,20 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
 
   useEffect(() => {
     if (user) refreshCredits();
+    else setCredits(null);
   }, [user, refreshCredits]);
 
   const fetchProjects = useCallback(async () => {
+    const gid = getGuestId();
+    if (!gid) return;
     setProjectsLoading(true);
     try {
-      const res = await fetch('/api/projects');
+      const res = await fetch('/api/projects', { headers: { 'x-guest-id': gid } });
       if (!res.ok) {
         setProjects([]);
         return;
       }
       const data = await res.json();
-      if (!userRef.current) return;
       setProjects(Array.isArray(data.projects) ? data.projects : []);
     } catch {
       // ignore
@@ -197,16 +195,17 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     }
   }, []);
 
-  // 로그인/익명 세션이 있으면 목록을 불러오고, 새 버전이 생길 때마다 갱신한다.
+  // 브라우저(게스트) 단위 목록 — 로그인 무관하게 마운트 시 + 새 버전 생길 때 갱신.
   useEffect(() => {
-    if (user) fetchProjects();
-    else setProjects([]);
-  }, [user, state.versions.length, fetchProjects]);
+    fetchProjects();
+  }, [fetchProjects, state.versions.length]);
 
   // 좌측 "최근 프로젝트"에서 세션 선택 → 그 세션의 버전들을 복원한다.
   const handleOpenProject = useCallback(async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/projects?sessionId=${encodeURIComponent(sessionId)}`);
+      const res = await fetch(`/api/projects?sessionId=${encodeURIComponent(sessionId)}`, {
+        headers: { 'x-guest-id': getGuestId() },
+      });
       if (!res.ok) throw new Error('프로젝트를 불러오지 못했습니다.');
       const data = await res.json();
       const rows = (data.versions || []) as Array<{
@@ -255,48 +254,26 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     setPreviewHtml(null);
   }, []);
 
-  // 세션이 없으면 익명 세션을 발급한다. 로그아웃 방문자도 문서를 생성·저장할 수 있게 한다.
-  const ensureSession = useCallback(async (): Promise<boolean> => {
-    const supabase = createClient();
-    const {
-      data: { user: u },
-    } = await supabase.auth.getUser();
-    if (u) return true;
-    const { error } = await supabase.auth.signInAnonymously();
-    if (error) {
-      console.error('anonymous sign-in failed', error);
-      return false;
-    }
-    return true;
-  }, []);
-
-  // 로그인 의사: 진행 중 작업과(복원용), 현재 익명 세션 토큰(이관용)을 stash한 뒤 구글 로그인으로 이동.
-  // 로그인은 일반 OAuth로 처리하고, 복귀 후 /api/claim으로 익명 작업을 실명 계정에 합친다.
-  // (linkIdentity는 이미 그 구글 계정이 존재하면 충돌하므로 사용하지 않는다.)
+  // 로그인 의사: 진행 중 작업을 stash(복귀 후 다운로드 이어가기)한 뒤 구글 로그인으로 이동.
+  // 프로젝트는 브라우저(게스트) 단위라 로그인해도 목록은 그대로 — 이관/claim 불필요.
   const handleLoginIntent = useCallback(
     async (pendingReportId?: string) => {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const u = session?.user ?? null;
       try {
         window.localStorage.setItem(
           DRAFT_KEY,
           JSON.stringify({ state, previewHtml, pendingReportId: pendingReportId ?? null })
         );
-        if (u && isAnonymous(u) && session?.access_token) {
-          window.localStorage.setItem(
-            CLAIM_KEY,
-            JSON.stringify({ token: session.access_token })
-          );
-        }
       } catch {
         // 저장 실패는 무시 — 로그인 자체는 진행
       }
+      const supabase = createClient();
       await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          // 항상 구글 계정 선택 화면을 띄운다(이미 로그인된 계정으로 자동 통과 방지).
+          queryParams: { prompt: 'select_account' },
+        },
       });
     },
     [state, previewHtml]
@@ -339,7 +316,10 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         const currentVersion = state.versions.length;
         const res = await fetch('/api/generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-guest-id': getGuestId(),
+          },
           body: JSON.stringify({
             ...body,
             sessionId: state.sessionId || undefined,
@@ -425,13 +405,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
   const handleStep1Next = async () => {
     if (!state.selectedReport) return;
 
-    // 로그인 없이도 진행 — 세션이 없으면 익명 세션을 먼저 발급한다.
-    const ok = await ensureSession();
-    if (!ok) {
-      alert('세션을 시작할 수 없습니다. 잠시 후 다시 시도해주세요.');
-      return;
-    }
-
+    // 로그인 없이 바로 진행 — 프로젝트는 브라우저(게스트) 단위로 저장된다.
     const result = await callGenerateApi(
       { action: 'generate', reportType: state.selectedReport },
       'generate'
@@ -493,6 +467,11 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     }
   };
 
+  // 상단 단계 표시 클릭 → 이미 지난 단계로 되돌아간다(완료된 단계만 클릭 가능).
+  const handleStepNavigate = (step: 1 | 2 | 3) => {
+    if (step < state.currentStep) handleBack(step as 1 | 2);
+  };
+
   const handleSendMessage = async (message: string) => {
     const newMessages: Message[] = [
       ...state.messages,
@@ -537,8 +516,8 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
 
   const requestDownload = useCallback(
     async (reportId: string): Promise<boolean> => {
-      // 실명 로그인 전에는 다운로드 대신 로그인 모달을 띄운다(익명으로 잘못 결제 방지).
-      if (!isRealUserRef.current) {
+      // 다운로드(결제)는 로그인 필요 — 미로그인 시 로그인 모달.
+      if (!userRef.current) {
         setAuthModal({ open: true, reportId });
         return false;
       }
@@ -546,7 +525,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         const res = await fetch('/api/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportId }),
+          body: JSON.stringify({ reportId, guestId: getGuestId() }),
         });
         const data = await res.json();
         if (res.status === 409 && data.error === 'NO_CREDITS') {
@@ -593,65 +572,41 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     })();
   }, [user, refreshCredits, requestDownload]);
 
-  // 로그인 리다이렉트 복귀: 실명 유저가 되면 ①익명 작업을 실명 계정으로 이관 →
-  // ②목록 갱신 → ③stash한 작업 복원 + 누르던 다운로드 재개(이용권 없으면 구매 다이얼로그).
+  // 로그인 리다이렉트 복귀: 로그인되면 stash한 작업을 복원하고, 누르던 다운로드를 이어간다.
+  // (프로젝트는 게스트 단위라 목록은 그대로 — 별도 이관 없음.)
   const restoredRef = useRef(false);
   useEffect(() => {
-    if (restoredRef.current || !isRealUser) return;
+    if (restoredRef.current || !user) return;
     if (typeof window === 'undefined') return;
     restoredRef.current = true;
 
-    void (async () => {
-      // ① 익명 작업 이관
-      let claimRaw: string | null = null;
-      try {
-        claimRaw = window.localStorage.getItem(CLAIM_KEY);
-      } catch {
-        claimRaw = null;
+    let draftRaw: string | null = null;
+    try {
+      draftRaw = window.localStorage.getItem(DRAFT_KEY);
+      if (draftRaw) window.localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      draftRaw = null;
+    }
+    if (!draftRaw) return;
+    try {
+      const draft = JSON.parse(draftRaw) as {
+        state?: AppState;
+        previewHtml?: string | null;
+        pendingReportId?: string | null;
+      };
+      if (draft.state) setState(draft.state);
+      if (typeof draft.previewHtml === 'string') setPreviewHtml(draft.previewHtml);
+      if (draft.pendingReportId) {
+        const rid = draft.pendingReportId;
+        void (async () => {
+          await refreshCredits();
+          await requestDownload(rid);
+        })();
       }
-      if (claimRaw) {
-        try {
-          window.localStorage.removeItem(CLAIM_KEY);
-          const { token } = JSON.parse(claimRaw) as { token?: string };
-          if (token) {
-            await fetch('/api/claim', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ anonAccessToken: token }),
-            });
-          }
-        } catch {
-          // 이관 실패는 치명적이지 않음 — 목록만 일부 누락될 수 있음
-        }
-      }
-
-      // ② 이관 반영된 목록·이용권 갱신
-      await fetchProjects();
-      await refreshCredits();
-
-      // ③ 작업 상태 복원 + 다운로드 재개
-      let draftRaw: string | null = null;
-      try {
-        draftRaw = window.localStorage.getItem(DRAFT_KEY);
-        if (draftRaw) window.localStorage.removeItem(DRAFT_KEY);
-      } catch {
-        draftRaw = null;
-      }
-      if (!draftRaw) return;
-      try {
-        const draft = JSON.parse(draftRaw) as {
-          state?: AppState;
-          previewHtml?: string | null;
-          pendingReportId?: string | null;
-        };
-        if (draft.state) setState(draft.state);
-        if (typeof draft.previewHtml === 'string') setPreviewHtml(draft.previewHtml);
-        if (draft.pendingReportId) await requestDownload(draft.pendingReportId);
-      } catch {
-        // 손상된 draft는 무시
-      }
-    })();
-  }, [isRealUser, fetchProjects, refreshCredits, requestDownload]);
+    } catch {
+      // 손상된 draft는 무시
+    }
+  }, [user, refreshCredits, requestDownload]);
 
   const isStep3 = state.currentStep === 3;
   let tossClientKey = '';
@@ -665,10 +620,11 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     <>
       <Navbar
         currentStep={state.currentStep}
-        user={isRealUser ? user : null}
+        user={user}
         onSignOut={handleSignOut}
         onSignIn={() => handleLoginIntent()}
-        credits={isRealUser ? credits : null}
+        onStepNavigate={handleStepNavigate}
+        credits={credits}
       />
       <AppLayout>
         <RecentProjects
@@ -689,37 +645,39 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
           locked={isStep3}
         />
         <OptionsPanel>
-          {state.currentStep === 1 && (
-            <Step1ReportSelect
-              selectedReport={state.selectedReport}
-              onSelect={handleReportSelect}
-              onNext={handleStep1Next}
-              isAuthenticated
-              onSignIn={() => handleLoginIntent()}
-            />
-          )}
-          {state.currentStep === 2 && (
-            <Step2StyleSelect
-              onStyleSelect={handleStyleSelect}
-              onCustomFeedback={handleCustomFeedback}
-              onNext={handleStep2Next}
-              onBack={() => handleBack(1)}
-              onDownload={handleDownloadCurrent}
-              isLoading={state.isLoading}
-            />
-          )}
-          {state.currentStep === 3 && (
-            <Step3ContentFill
-              messages={state.messages}
-              onSendMessage={handleSendMessage}
-              onBack={() => handleBack(2)}
-              onDownload={handleDownloadCurrent}
-              isLoading={state.isLoading}
-            />
-          )}
+          <StepSlide key={state.currentStep}>
+            {state.currentStep === 1 && (
+              <Step1ReportSelect
+                selectedReport={state.selectedReport}
+                onSelect={handleReportSelect}
+                onNext={handleStep1Next}
+                isAuthenticated
+                onSignIn={() => handleLoginIntent()}
+              />
+            )}
+            {state.currentStep === 2 && (
+              <Step2StyleSelect
+                onStyleSelect={handleStyleSelect}
+                onCustomFeedback={handleCustomFeedback}
+                onNext={handleStep2Next}
+                onBack={() => handleBack(1)}
+                onDownload={handleDownloadCurrent}
+                isLoading={state.isLoading}
+              />
+            )}
+            {state.currentStep === 3 && (
+              <Step3ContentFill
+                messages={state.messages}
+                onSendMessage={handleSendMessage}
+                onBack={() => handleBack(2)}
+                onDownload={handleDownloadCurrent}
+                isLoading={state.isLoading}
+              />
+            )}
+          </StepSlide>
         </OptionsPanel>
       </AppLayout>
-      {isRealUser && user && tossClientKey && (
+      {user && tossClientKey && (
         <PurchaseDialog
           open={purchaseDialog.open}
           user={user}

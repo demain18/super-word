@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 export const REPORTS_BUCKET = 'reports';
 
 interface SaveReportInput {
-  userId: string;
+  guestId: string;
   sessionId: string;
   version: number;
   reportType?: string | null;
@@ -17,7 +17,8 @@ interface SaveReportInput {
 
 export interface ReportRow {
   id: string;
-  user_id: string;
+  user_id: string | null;
+  guest_id: string | null;
   session_id: string;
   version: number;
   storage_path: string;
@@ -51,7 +52,7 @@ export interface ProjectVersion {
 
 export async function saveReport(input: SaveReportInput): Promise<ReportRow> {
   const svc = createServiceClient();
-  const storagePath = `${input.userId}/${input.sessionId}/${input.filename}`;
+  const storagePath = `${input.guestId}/${input.sessionId}/${input.filename}`;
 
   const { error: uploadErr } = await svc.storage
     .from(REPORTS_BUCKET)
@@ -66,7 +67,7 @@ export async function saveReport(input: SaveReportInput): Promise<ReportRow> {
     .from('reports')
     .upsert(
       {
-        user_id: input.userId,
+        guest_id: input.guestId,
         session_id: input.sessionId,
         version: input.version,
         report_type: input.reportType ?? null,
@@ -77,7 +78,7 @@ export async function saveReport(input: SaveReportInput): Promise<ReportRow> {
         storage_path: storagePath,
         filename: input.filename,
       },
-      { onConflict: 'user_id,session_id,version' }
+      { onConflict: 'guest_id,session_id,version' }
     )
     .select()
     .single();
@@ -85,13 +86,13 @@ export async function saveReport(input: SaveReportInput): Promise<ReportRow> {
   return data as ReportRow;
 }
 
-/** 사용자의 세션(=프로젝트)별 요약 목록. 최근 수정 순. */
-export async function listProjects(userId: string): Promise<ProjectSummary[]> {
+/** 브라우저(게스트)의 세션(=프로젝트)별 요약 목록. 최근 수정 순. */
+export async function listProjects(guestId: string): Promise<ProjectSummary[]> {
   const svc = createServiceClient();
   const { data, error } = await svc
     .from('reports')
     .select('session_id, version, report_type, style, title, created_at')
-    .eq('user_id', userId)
+    .eq('guest_id', guestId)
     .order('version', { ascending: true });
   if (error) throw error;
 
@@ -130,14 +131,14 @@ export async function listProjects(userId: string): Promise<ProjectSummary[]> {
 
 /** 특정 세션(프로젝트)의 전체 버전 목록 — 복원용. version 오름차순. */
 export async function getProjectVersions(
-  userId: string,
+  guestId: string,
   sessionId: string
 ): Promise<ProjectVersion[]> {
   const svc = createServiceClient();
   const { data, error } = await svc
     .from('reports')
     .select('id, version, label, report_type, style, preview_html')
-    .eq('user_id', userId)
+    .eq('guest_id', guestId)
     .eq('session_id', sessionId)
     .order('version', { ascending: true });
   if (error) throw error;
@@ -151,33 +152,12 @@ export async function getProjectVersions(
   }));
 }
 
-export async function findReport(
-  userId: string,
-  sessionId: string,
-  version: number
-): Promise<ReportRow | null> {
-  const svc = createServiceClient();
-  const { data, error } = await svc
-    .from('reports')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('session_id', sessionId)
-    .eq('version', version)
-    .maybeSingle();
-  if (error) throw error;
-  return (data as ReportRow | null) ?? null;
-}
-
-export async function findReportById(
-  reportId: string,
-  userId: string
-): Promise<ReportRow | null> {
+export async function findReportById(reportId: string): Promise<ReportRow | null> {
   const svc = createServiceClient();
   const { data, error } = await svc
     .from('reports')
     .select('*')
     .eq('id', reportId)
-    .eq('user_id', userId)
     .maybeSingle();
   if (error) throw error;
   return (data as ReportRow | null) ?? null;
