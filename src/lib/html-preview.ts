@@ -1,5 +1,7 @@
-import { ReportType, StyleType } from '@/types';
+import { ReportType, StyleType, CustomStyleSpec } from '@/types';
 import { AIDocumentContent } from './docx-builder';
+
+type StyleArg = StyleType | CustomStyleSpec | null;
 
 interface StyleSettings {
   font: string;
@@ -60,7 +62,23 @@ const STYLE_MAP: Record<StyleType | 'default', StyleSettings> = {
   },
 };
 
-function getStyle(styleType?: StyleType | null): StyleSettings {
+function getStyle(styleType?: StyleArg): StyleSettings {
+  if (styleType && typeof styleType === 'object') {
+    // 자유 스타일 사양 → 프리뷰 단위(px, # 포함 hex)로 변환
+    const hex = (c: string) => (c.startsWith('#') ? c : `#${c}`);
+    const px = (pt: number) => `${Math.round(pt * 1.333)}px`;
+    return {
+      font: `'${styleType.font}', 'Malgun Gothic', '맑은 고딕', sans-serif`,
+      titleSize: px(styleType.titlePt),
+      headingSize: px(styleType.headingPt),
+      bodySize: px(styleType.bodyPt),
+      titleColor: hex(styleType.titleColor),
+      headingColor: hex(styleType.headingColor),
+      accentColor: hex(styleType.accentColor),
+      borderColor: hex(styleType.borderColor),
+      headerBgColor: hex(styleType.headerBgColor),
+    };
+  }
   if (!styleType) return STYLE_MAP.default;
   return STYLE_MAP[styleType];
 }
@@ -393,7 +411,7 @@ const REPORT_TEMPLATES: Record<ReportType, { title: string; sections: TemplateSe
 
 export function generateTemplatePreviewHtml(
   reportType: ReportType,
-  styleType?: StyleType | null
+  styleType?: StyleArg
 ): string {
   const s = getStyle(styleType);
   const template = REPORT_TEMPLATES[reportType];
@@ -403,7 +421,7 @@ export function generateTemplatePreviewHtml(
 export function generateAIPreviewHtml(
   reportType: ReportType | null,
   aiContent: AIDocumentContent,
-  styleType?: StyleType | null
+  styleType?: StyleArg
 ): string {
   const s = getStyle(styleType);
   const sections: TemplateSection[] = [];
@@ -492,7 +510,7 @@ ${content}
 
 export function generateReplacedPreviewHtml(
   reportType: ReportType,
-  styleType: StyleType | null | undefined,
+  styleType: StyleArg | undefined,
   replacements: Record<string, string>
 ): string {
   const s = getStyle(styleType);

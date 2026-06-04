@@ -1,14 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Packer } from 'docx';
-import { buildContentFillPrompt, buildCustomFeedbackPrompt, buildCustomFormPrompt, buildCustomEditPrompt } from '@/lib/prompts';
+import { buildContentFillPrompt, buildCustomFeedbackPrompt, buildCustomFormPrompt, buildCustomEditPrompt, buildStyleFromPrompt } from '@/lib/prompts';
 import { buildDocument, buildDocumentFromAI, buildDocumentWithReplacements, extractPlaceholders, AIDocumentContent } from '@/lib/docx-builder';
 import { generateTemplatePreviewHtml, generateAIPreviewHtml, generateReplacedPreviewHtml } from '@/lib/html-preview';
-import { ReportType, StyleType, REPORT_TYPES } from '@/types';
+import { ReportType, StyleType, REPORT_TYPES, CustomStyleSpec } from '@/types';
+
+type StyleArg = StyleType | CustomStyleSpec | undefined;
 import { randomUUID } from 'crypto';
 import { saveReport } from '@/lib/reports';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+
+// 구조화 JSON 출력 전용 모델 — JSON 모드 + 낮은 temperature + 출력 상한으로 지연을 줄인다.
+function jsonModel() {
+  return genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.4,
+      maxOutputTokens: 4096,
+    },
+  });
+}
 
 function parseAIResponse<T>(responseText: string): T | null {
   try {
@@ -64,7 +78,7 @@ export async function POST(req: NextRequest) {
       buffer: Buffer,
       opts: {
         label: string;
-        style?: StyleType | null;
+        style?: StyleArg | null;
         title?: string | null;
         previewHtml?: string | null;
         aiContent?: unknown;
@@ -75,7 +89,8 @@ export async function POST(req: NextRequest) {
         sessionId: sid,
         version: nextVersion,
         reportType: (reportType as string) ?? null,
-        style: opts.style ?? null,
+        // 프리셋(문자열)만 저장 — 자유 스타일 사양 객체는 style 컬럼에 넣지 않는다.
+        style: typeof opts.style === 'string' ? opts.style : null,
         label: opts.label,
         title: opts.title ?? reportLabel,
         previewHtml: opts.previewHtml ?? null,
@@ -133,12 +148,12 @@ export async function POST(req: NextRequest) {
       }
 
       case 'custom-feedback': {
-        const currentStyle = body.currentStyle as StyleType | undefined;
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const currentStyle = body.currentStyle as StyleArg;
+        const model = jsonModel();
         const prompt = buildCustomFeedbackPrompt(
           reportType as ReportType,
           customFeedback,
-          currentStyle
+          typeof currentStyle === 'string' ? currentStyle : null
         );
         const result = await model.generateContent(prompt);
         const responseText = result.response.text();
@@ -172,10 +187,10 @@ export async function POST(req: NextRequest) {
       }
 
       case 'content': {
-        const currentStyle = body.currentStyle as StyleType | undefined;
+        const currentStyle = body.currentStyle as StyleArg;
         const placeholders = extractPlaceholders(reportType as ReportType);
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const model = jsonModel();
         const prompt = buildContentFillPrompt(reportType as ReportType, placeholders, userInput);
         const result = await model.generateContent(prompt);
         const responseText = result.response.text();
@@ -214,7 +229,7 @@ export async function POST(req: NextRequest) {
         if (!userPrompt) {
           return NextResponse.json({ error: 'EMPTY_PROMPT' }, { status: 400 });
         }
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const model = jsonModel();
         const result = await model.generateContent(buildCustomFormPrompt(userPrompt));
         const ai = parseAIResponse<AIDocumentContent & { message?: string }>(result.response.text());
         if (!ai?.sections) {
@@ -270,13 +285,13 @@ export async function POST(req: NextRequest) {
       }
 
       case 'custom-edit': {
-        const currentStyle = body.currentStyle as StyleType | undefined;
+        const currentStyle = body.currentStyle as StyleArg;
         const ai = body.aiContent as AIDocumentContent | undefined;
         const instruction = String(body.instruction || '').trim();
         if (!ai?.sections || !instruction) {
           return NextResponse.json({ error: 'MISSING_CONTENT' }, { status: 400 });
         }
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const model = jsonModel();
         const result = await model.generateContent(
           buildCustomEditPrompt(JSON.stringify(ai), instruction)
         );
@@ -304,6 +319,46 @@ export async function POST(req: NextRequest) {
           previewHtml,
           aiContent: edited,
           message: edited.message || '양식을 수정했습니다.',
+          version: nextVersion,
+        });
+      }
+
+      // ── 자유 스타일(프롬프트로 색·폰트 지정) ──
+      case 'style-prompt': {
+        const userPrompt = String(body.prompt || '').trim();
+        if (!userPrompt) {
+          return NextResponse.json({ error: 'EMPTY_PROMPT' }, { status: 400 });
+        }
+        const ai = body.aiContent as AIDocumentContent | undefined;
+        const model = jsonModel();
+        const result = await model.generateContent(buildStyleFromPrompt(userPrompt));
+        const spec = parseAIResponse<CustomStyleSpec & { message?: string }>(result.response.text());
+        if (!spec?.font) {
+          return NextResponse.json({
+            sessionId: sid,
+            message: '스타일 적용에 실패했습니다. 다시 시도해주세요.',
+            error: 'parse_error',
+          });
+        }
+        const doc = ai?.sections
+          ? buildDocumentFromAI(null, ai, spec)
+          : buildDocument(reportType as ReportType, spec);
+        const buffer = await Packer.toBuffer(doc);
+        const previewHtml = ai?.sections
+          ? generateAIPreviewHtml(null, ai, spec)
+          : generateTemplatePreviewHtml(reportType as ReportType, spec);
+        const reportId = await persist(buffer, {
+          label: '스타일 변경',
+          previewHtml,
+          aiContent: ai ?? undefined,
+        });
+        return NextResponse.json({
+          sessionId: sid,
+          reportId,
+          previewHtml,
+          styleSpec: spec,
+          aiContent: ai ?? undefined,
+          message: spec.message || '스타일을 적용했습니다.',
           version: nextVersion,
         });
       }

@@ -84,6 +84,33 @@ ${currentStyle ? `현재 적용된 스타일: ${STYLE_PROMPTS[currentStyle]}` : 
 - message 필드에 어떤 수정을 적용했는지 안내`;
 }
 
+export function buildStyleFromPrompt(userPrompt: string): string {
+  return `너는 한국어 문서 디자이너다. 사용자의 스타일 요청을 문서 서식 사양(JSON)으로 변환한다.
+
+사용자 요청:
+${userPrompt}
+
+요청의 분위기·대상·색감·폰트 느낌을 반영해 아래 JSON으로만 응답하라. JSON 외의 다른 텍스트는 포함하지 마라.
+
+{
+  "font": "문서에 쓸 폰트 이름. 둥근/귀여운 느낌이면 '나눔스퀘어라운드'·'나눔손글씨', 격식이면 '맑은 고딕'·'바탕'",
+  "titlePt": 제목 크기(pt, 18~32),
+  "headingPt": 소제목 크기(pt, 13~20),
+  "bodyPt": 본문 크기(pt, 10~13),
+  "titleColor": "#RRGGBB",
+  "headingColor": "#RRGGBB",
+  "accentColor": "#RRGGBB",
+  "borderColor": "#RRGGBB",
+  "headerBgColor": "#RRGGBB",
+  "message": "어떤 스타일을 적용했는지 한 줄 설명"
+}
+
+규칙:
+- 요청한 색감을 적극 반영(예: "노랑/유치원" → 밝은 노랑·주황 계열, headerBgColor는 아주 연한 톤)
+- 가독성 유지(본문 글자색이 너무 흐리지 않게)
+- 둥근/유치원/팜플렛 느낌이면 폰트도 그에 맞게 선택`;
+}
+
 export function buildCustomFormPrompt(userPrompt: string): string {
   return `${PERSONA}
 

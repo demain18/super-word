@@ -17,7 +17,9 @@ import {
   VerticalAlign,
   ShadingType,
 } from 'docx';
-import { ReportType, StyleType } from '@/types';
+import { ReportType, StyleType, CustomStyleSpec } from '@/types';
+
+type StyleArg = StyleType | CustomStyleSpec | null;
 
 interface DocumentContent {
   title: string;
@@ -97,7 +99,22 @@ interface StyleSettings {
   headerBgColor: string;
 }
 
-function getStyle(styleType?: StyleType | null): StyleSettings {
+function getStyle(styleType?: StyleArg): StyleSettings {
+  if (styleType && typeof styleType === 'object') {
+    // 자유 스타일 사양 → docx 단위(half-pt, #없는 hex)로 변환
+    const strip = (c: string) => c.replace('#', '');
+    return {
+      titleSize: Math.round(styleType.titlePt * 2),
+      headingSize: Math.round(styleType.headingPt * 2),
+      bodySize: Math.round(styleType.bodyPt * 2),
+      font: styleType.font,
+      titleColor: strip(styleType.titleColor),
+      headingColor: strip(styleType.headingColor),
+      accentColor: strip(styleType.accentColor),
+      borderColor: strip(styleType.borderColor),
+      headerBgColor: strip(styleType.headerBgColor),
+    };
+  }
   if (!styleType) return STYLE_CONFIG.default;
   return STYLE_CONFIG[styleType];
 }
@@ -585,7 +602,7 @@ const REPORT_TEMPLATES: Record<ReportType, (style: StyleSettings) => DocumentCon
 
 export function buildDocument(
   reportType: ReportType,
-  styleType?: StyleType | null,
+  styleType?: StyleArg,
 ): Document {
   const style = getStyle(styleType);
   const template = REPORT_TEMPLATES[reportType](style);
@@ -720,7 +737,7 @@ export function buildDocument(
 export function buildDocumentFromAI(
   reportType: ReportType | null,
   aiContent: AIDocumentContent,
-  styleType?: StyleType | null,
+  styleType?: StyleArg,
 ): Document {
   const style = getStyle(styleType);
   const children: (Paragraph | Table)[] = [];
@@ -897,7 +914,7 @@ export function extractPlaceholders(reportType: ReportType): string[] {
 
 export function buildDocumentWithReplacements(
   reportType: ReportType,
-  styleType: StyleType | null | undefined,
+  styleType: StyleArg | undefined,
   replacements: Record<string, string>,
 ): Document {
   const style = getStyle(styleType);
