@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import SiteFooter from '@/components/layout/SiteFooter';
 
 export const metadata = {
   title: '이용약관 | Super Word',
@@ -6,6 +7,7 @@ export const metadata = {
 
 export default function TermsPage() {
   return (
+    <>
     <main
       style={{
         maxWidth: 820,
@@ -101,5 +103,7 @@ export default function TermsPage() {
         본 약관은 서비스 운영상의 필요에 따라 변경될 수 있으며, 변경 시 본 페이지를 통해 사전 고지합니다.
       </p>
     </main>
+    <SiteFooter />
+    </>
   );
 }

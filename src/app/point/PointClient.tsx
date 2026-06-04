@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import styled from '@emotion/styled';
 import { theme } from '@/styles/theme';
 import Navbar from '@/components/layout/Navbar';
+import SiteFooter from '@/components/layout/SiteFooter';
 import Button from '@/components/common/Button';
 import { createClient } from '@/lib/supabase/client';
 import { PACKAGE_LIST, PACKAGES, type PackageCode } from '@/lib/passes-config';
@@ -468,10 +469,12 @@ export default function PointClient({
           • 보유 회수가 부족할 경우 다운로드 시점에 이용권 구매 안내가 표시됩니다.
           <NoticeLinks>
             <Link href="/terms">이용약관</Link>
+            <Link href="/privacy">개인정보처리방침</Link>
             <Link href="/refund">환불 정책</Link>
           </NoticeLinks>
         </NoticeBox>
       </Page>
+      <SiteFooter />
     </>
   );
 }

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import SiteFooter from '@/components/layout/SiteFooter';
 
 export const metadata = {
   title: '환불 정책 | Super Word',
@@ -6,6 +7,7 @@ export const metadata = {
 
 export default function RefundPage() {
   return (
+    <>
     <main
       style={{
         maxWidth: 820,
@@ -95,5 +97,7 @@ export default function RefundPage() {
         </p>
       </section>
     </main>
+    <SiteFooter />
+    </>
   );
 }
