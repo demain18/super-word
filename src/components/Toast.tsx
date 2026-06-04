@@ -1,86 +1,105 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import styled from '@emotion/styled';
 import { keyframes } from '@emotion/react';
 
-const slideDown = keyframes`
+const slideIn = keyframes`
   from { transform: translate(-50%, -140%); opacity: 0; }
   to { transform: translate(-50%, 0); opacity: 1; }
 `;
-
-// 다운로드 화살표가 트레이로 통통 떨어지는 느낌
-const bounce = keyframes`
-  0%, 100% { transform: translateY(-1.5px); }
-  45% { transform: translateY(2.5px); }
+const slideOut = keyframes`
+  from { transform: translate(-50%, 0); opacity: 1; }
+  to { transform: translate(-50%, -130%); opacity: 0; }
+`;
+const spin = keyframes`
+  to { transform: rotate(360deg); }
 `;
 
-const Wrap = styled.div`
+const Wrap = styled.div<{ $closing: boolean }>`
   position: fixed;
   top: 18px;
   left: 50%;
-  transform: translateX(-50%);
   z-index: 3000;
-  animation: ${slideDown} 340ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation: ${({ $closing }) => ($closing ? slideOut : slideIn)}
+    ${({ $closing }) => ($closing ? '300ms' : '340ms')} cubic-bezier(0.22, 0.61, 0.36, 1) both;
 `;
 
 const Card = styled.div`
+  background: #131921;
+  color: #ffffff;
+  padding: 13px 16px 13px 22px;
+  border-radius: 12px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42), 0 3px 8px rgba(0, 0, 0, 0.28);
+  font-size: 14px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 13px 22px;
-  border-radius: 14px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #ffffff;
-  background: linear-gradient(135deg, #34d399 0%, #10b981 55%, #059669 100%);
-  box-shadow: 0 8px 26px rgba(16, 185, 129, 0.45);
   max-width: min(92vw, 540px);
 `;
 
-const IconWrap = styled.span`
+const Spinner = styled.span`
   flex: none;
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffd814;
+  animation: ${spin} 0.8s linear infinite;
+`;
 
-  .arrow {
-    transform-origin: center;
-    animation: ${bounce} 0.9s ease-in-out infinite;
+const Msg = styled.span`
+  flex: 1;
+`;
+
+const CloseBtn = styled.button`
+  flex: none;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+  transition: color 150ms ease, background 150ms ease;
+  &:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
   }
 `;
 
-function DownloadIcon() {
-  return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <g className="arrow">
-        <line x1="12" y1="3.5" x2="12" y2="14" />
-        <polyline points="7.5,10 12,14.5 16.5,10" />
-      </g>
-      <path d="M5 19.5 h14" />
-    </svg>
-  );
+interface Props {
+  message: string;
+  onClose: () => void;
 }
 
-export default function Toast({ message }: { message: string }) {
+export default function Toast({ message, onClose }: Props) {
+  const [closing, setClosing] = useState(false);
+
+  // 새 메시지 → 다시 보이기 + 자동 닫힘 타이머
+  useEffect(() => {
+    setClosing(false);
+    const hold = setTimeout(() => setClosing(true), 3000);
+    return () => clearTimeout(hold);
+  }, [message]);
+
+  // 닫히기 시작하면(자동/수동) 애니메이션 끝난 뒤 제거
+  useEffect(() => {
+    if (!closing) return;
+    const done = setTimeout(onClose, 320);
+    return () => clearTimeout(done);
+  }, [closing, onClose]);
+
   return (
-    <Wrap role="status" aria-live="polite">
+    <Wrap role="status" aria-live="polite" $closing={closing}>
       <Card>
-        <IconWrap>
-          <DownloadIcon />
-        </IconWrap>
-        {message}
+        <Spinner aria-hidden />
+        <Msg>{message}</Msg>
+        <CloseBtn type="button" onClick={() => setClosing(true)} aria-label="닫기">
+          ×
+        </CloseBtn>
       </Card>
     </Wrap>
   );
