@@ -401,14 +401,15 @@ export function generateTemplatePreviewHtml(
 }
 
 export function generateAIPreviewHtml(
-  reportType: ReportType,
+  reportType: ReportType | null,
   aiContent: AIDocumentContent,
   styleType?: StyleType | null
 ): string {
   const s = getStyle(styleType);
   const sections: TemplateSection[] = [];
 
-  if (reportType !== 'meeting-minutes') {
+  // 커스텀 양식(reportType null)·회의록은 결재란을 넣지 않는다.
+  if (reportType && reportType !== 'meeting-minutes') {
     sections.push({ type: 'approval' });
   }
 

@@ -144,6 +144,7 @@ const initialAppState: AppState = {
   versions: [],
   currentVersionIndex: 0,
   lockedVersionIndex: null,
+  aiContent: null,
 };
 
 export default function HomeClient({ initialUser, initialCredits }: HomeClientProps) {
@@ -230,6 +231,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         reportType: string | null;
         style: string | null;
         previewHtml: string | null;
+        aiContent: unknown;
       }>;
       if (!rows.length) return;
 
@@ -257,6 +259,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
         versions,
         currentVersionIndex: lastIdx,
         lockedVersionIndex: restoreStep === 3 ? lastIdx : null,
+        aiContent: (rows[lastIdx]?.aiContent ?? null) as AppState['aiContent'],
       });
       setPreviewHtml(versions[lastIdx].previewHtml || null);
     } catch (e) {
@@ -364,6 +367,8 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
             loadingMessage: '',
             versions: newVersions,
             currentVersionIndex: newVersions.length - 1,
+            // 커스텀 양식이면 응답에 aiContent가 있고, 프리셋이면 없으므로 null로 초기화된다.
+            aiContent: (data.aiContent ?? null) as AppState['aiContent'],
           };
         });
 
@@ -431,16 +436,27 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     }
   };
 
+  // 양식 선택 단계의 프롬프트로 맞춤 양식을 생성한다(프리셋 없이). 성공 여부를 반환한다.
+  const handleCustomGenerate = async (prompt: string): Promise<boolean> => {
+    if (!prompt.trim()) return false;
+    const result = await callGenerateApi({ action: 'custom-generate', prompt }, 'generate');
+    if (result) {
+      setState((prev) => ({ ...prev, selectedReport: null, currentStep: 2 }));
+      return true;
+    }
+    return false;
+  };
+
   const handleStyleSelect = async (style: StyleType) => {
-    const result = await callGenerateApi(
-      {
-        action: 'style',
-        reportType: state.selectedReport,
-        style,
-        styleHistory: state.styleHistory,
-      },
-      'style'
-    );
+    const body = state.aiContent
+      ? { action: 'custom-style', aiContent: state.aiContent, style }
+      : {
+          action: 'style',
+          reportType: state.selectedReport,
+          style,
+          styleHistory: state.styleHistory,
+        };
+    const result = await callGenerateApi(body, 'style');
 
     if (result) {
       setState((prev) => ({
@@ -452,15 +468,20 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
   };
 
   const handleCustomFeedback = async (feedback: string) => {
-    await callGenerateApi(
-      {
-        action: 'custom-feedback',
-        reportType: state.selectedReport,
-        customFeedback: feedback,
-        currentStyle: state.selectedStyle,
-      },
-      'custom-feedback'
-    );
+    const body = state.aiContent
+      ? {
+          action: 'custom-edit',
+          aiContent: state.aiContent,
+          instruction: feedback,
+          currentStyle: state.selectedStyle,
+        }
+      : {
+          action: 'custom-feedback',
+          reportType: state.selectedReport,
+          customFeedback: feedback,
+          currentStyle: state.selectedStyle,
+        };
+    await callGenerateApi(body, 'custom-feedback');
   };
 
   const handleStep2Next = () => {
@@ -509,15 +530,20 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
     ];
     setState((prev) => ({ ...prev, messages: newMessages }));
 
-    const result = await callGenerateApi(
-      {
-        action: 'content',
-        reportType: state.selectedReport,
-        userInput: message,
-        currentStyle: state.selectedStyle,
-      },
-      'content'
-    );
+    const body = state.aiContent
+      ? {
+          action: 'custom-edit',
+          aiContent: state.aiContent,
+          instruction: message,
+          currentStyle: state.selectedStyle,
+        }
+      : {
+          action: 'content',
+          reportType: state.selectedReport,
+          userInput: message,
+          currentStyle: state.selectedStyle,
+        };
+    const result = await callGenerateApi(body, 'content');
 
     if (result?.message) {
       setState((prev) => ({
@@ -682,6 +708,7 @@ export default function HomeClient({ initialUser, initialCredits }: HomeClientPr
                 selectedReport={state.selectedReport}
                 onSelect={handleReportSelect}
                 onNext={handleStep1Next}
+                onCustomGenerate={handleCustomGenerate}
                 isAuthenticated
                 onSignIn={() => handleLoginIntent()}
               />

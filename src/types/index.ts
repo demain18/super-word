@@ -34,6 +34,17 @@ export interface VersionEntry {
   label: string;
 }
 
+/** 커스텀(프롬프트 기반) 양식의 AI 문서 구조. 단계 간에 들고 다닌다. */
+export interface AiDocContent {
+  title: string;
+  info: string[][];
+  sections: Array<{
+    heading?: string;
+    paragraphs?: string[];
+    table?: { headers?: string[]; rows: string[][] };
+  }>;
+}
+
 export interface AppState {
   currentStep: 1 | 2 | 3;
   selectedReport: ReportType | null;
@@ -46,6 +57,8 @@ export interface AppState {
   versions: VersionEntry[];
   currentVersionIndex: number;
   lockedVersionIndex: number | null;
+  /** 커스텀 양식이면 그 AI 문서 구조, 프리셋 양식이면 null. */
+  aiContent: AiDocContent | null;
 }
 
 export const REPORT_TYPES: ReportTypeInfo[] = [

@@ -11,6 +11,7 @@ interface SaveReportInput {
   label?: string | null;
   title?: string | null;
   previewHtml?: string | null;
+  aiContent?: unknown;
   buffer: Buffer;
   filename: string;
 }
@@ -48,6 +49,7 @@ export interface ProjectVersion {
   reportType: string | null;
   style: string | null;
   previewHtml: string | null;
+  aiContent: unknown;
 }
 
 export async function saveReport(input: SaveReportInput): Promise<ReportRow> {
@@ -75,6 +77,7 @@ export async function saveReport(input: SaveReportInput): Promise<ReportRow> {
         label: input.label ?? null,
         title: input.title ?? null,
         preview_html: input.previewHtml ?? null,
+        ai_content: input.aiContent ?? null,
         storage_path: storagePath,
         filename: input.filename,
       },
@@ -137,7 +140,7 @@ export async function getProjectVersions(
   const svc = createServiceClient();
   const { data, error } = await svc
     .from('reports')
-    .select('id, version, label, report_type, style, preview_html')
+    .select('id, version, label, report_type, style, preview_html, ai_content')
     .eq('guest_id', guestId)
     .eq('session_id', sessionId)
     .order('version', { ascending: true });
@@ -149,6 +152,7 @@ export async function getProjectVersions(
     reportType: (r.report_type as string | null) ?? null,
     style: (r.style as string | null) ?? null,
     previewHtml: (r.preview_html as string | null) ?? null,
+    aiContent: (r.ai_content as unknown) ?? null,
   }));
 }
 

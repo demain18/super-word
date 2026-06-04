@@ -717,7 +717,7 @@ export function buildDocument(
 }
 
 export function buildDocumentFromAI(
-  reportType: ReportType,
+  reportType: ReportType | null,
   aiContent: AIDocumentContent,
   styleType?: StyleType | null,
 ): Document {
@@ -741,8 +741,8 @@ export function buildDocumentFromAI(
     })
   );
 
-  // Approval table if applicable
-  if (reportType !== 'meeting-minutes') {
+  // Approval table if applicable (커스텀 양식·회의록은 제외)
+  if (reportType && reportType !== 'meeting-minutes') {
     children.push(createApprovalTable(style));
     children.push(new Paragraph({ spacing: { after: 300 }, children: [] }));
   }
