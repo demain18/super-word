@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import EmotionRegistry from './EmotionRegistry';
 import DevAnnotation from '@/components/dev/DevAnnotation';
@@ -19,6 +20,7 @@ export default function RootLayout({
       <body>
         <EmotionRegistry>{children}</EmotionRegistry>
         <DevAnnotation />
+        <Analytics />
       </body>
     </html>
   );
