@@ -65,14 +65,11 @@ const FeedbackLabel = styled.label`
   color: ${theme.colors.textPrimary};
 `;
 
-const TextArea = styled.textarea`
+const StyleInput = styled.input`
   border: 1px solid #888c8c;
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 14px;
-  line-height: 1.6;
-  resize: vertical;
-  min-height: 80px;
   font-family: inherit;
   &:focus {
     border-color: #e77600;
@@ -128,7 +125,7 @@ export default function Step2StyleSelect({
   return (
     <Container>
       <div>
-        <BackButton onClick={onBack} disabled={isLoading}>← 보고서 선택으로 돌아가기</BackButton>
+        <BackButton onClick={onBack} disabled={isLoading}>← 양식 선택으로 돌아가기</BackButton>
         <Title style={{ marginTop: '8px' }}>양식 스타일 선택</Title>
         <Subtitle>
           원하는 스타일을 선택하면 양식이 수정됩니다. 여러 번 클릭하면 해당 스타일이
@@ -149,12 +146,18 @@ export default function Step2StyleSelect({
 
       <Divider>
         <FeedbackArea>
-          <FeedbackLabel>직접 피드백 작성</FeedbackLabel>
-          <TextArea
-            placeholder="원하는 스타일을 직접 설명해주세요. 예: '더 깔끔하고 미니멀한 디자인으로', '표를 더 크게'"
+          <FeedbackLabel>스타일 직접 지정 (색·폰트·분위기)</FeedbackLabel>
+          <StyleInput
+            placeholder="원하는 색·폰트·분위기를 설명하고 Enter. 예: '유치원용 노랑·주황 톤, 둥근 폰트'"
             value={customFeedback}
             onChange={(e) => setCustomFeedback(e.target.value)}
-            disabled={isLoading}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleCustomSubmit();
+              }
+            }}
+            readOnly={isLoading}
           />
           <ButtonGroup>
             <Button
@@ -163,7 +166,7 @@ export default function Step2StyleSelect({
               onClick={handleCustomSubmit}
               disabled={!customFeedback.trim() || isLoading}
             >
-              피드백 적용
+              스타일 적용
             </Button>
           </ButtonGroup>
         </FeedbackArea>

@@ -7,6 +7,8 @@ const REPORT_LABELS: Record<ReportType, string> = {
   'meeting-minutes': '회의록',
   'weekly-monthly': '주간/월간 업무보고서',
   performance: '실적 보고서',
+  quotation: '견적서',
+  'service-contract': '용역 계약서',
 };
 
 export function buildStyleFeedbackPrompt(
@@ -82,6 +84,99 @@ ${currentStyle ? `현재 적용된 스타일: ${STYLE_PROMPTS[currentStyle]}` : 
 - message 필드에 어떤 수정을 적용했는지 안내`;
 }
 
+export function buildStyleFromPrompt(userPrompt: string): string {
+  return `너는 한국어 문서 디자이너다. 사용자의 스타일 요청을 문서 서식 사양(JSON)으로 변환한다.
+
+사용자 요청:
+${userPrompt}
+
+요청의 분위기·대상·색감·폰트 느낌을 반영해 아래 JSON으로만 응답하라. JSON 외의 다른 텍스트는 포함하지 마라.
+
+{
+  "font": "문서에 쓸 폰트 이름. 둥근/귀여운 느낌이면 '나눔스퀘어라운드'·'나눔손글씨', 격식이면 '맑은 고딕'·'바탕'",
+  "titlePt": 제목 크기(pt, 18~32),
+  "headingPt": 소제목 크기(pt, 13~20),
+  "bodyPt": 본문 크기(pt, 10~13),
+  "titleColor": "#RRGGBB",
+  "headingColor": "#RRGGBB",
+  "accentColor": "#RRGGBB",
+  "borderColor": "#RRGGBB",
+  "headerBgColor": "#RRGGBB",
+  "message": "어떤 스타일을 적용했는지 한 줄 설명"
+}
+
+규칙:
+- 요청한 색감을 적극 반영(예: "노랑/유치원" → 밝은 노랑·주황 계열, headerBgColor는 아주 연한 톤)
+- 가독성 유지(본문 글자색이 너무 흐리지 않게)
+- 둥근/유치원/팜플렛 느낌이면 폰트도 그에 맞게 선택`;
+}
+
+export function buildCustomFormPrompt(userPrompt: string): string {
+  return `${PERSONA}
+
+---
+
+사용자가 직접 설명한 "맞춤 문서 양식"을 새로 설계합니다.
+
+사용자 요청:
+${userPrompt}
+
+요청에 맞는 한국 비즈니스 문서 양식의 구조를 설계해주세요. 아직 빈 양식이므로 실제 값 대신 [플레이스홀더]로 채웁니다.
+
+반드시 아래 JSON 형식으로만 응답하세요. JSON 외의 다른 텍스트는 포함하지 마세요.
+
+{
+  "title": "문서 제목",
+  "info": [
+    ["항목명", "[값 플레이스홀더]"]
+  ],
+  "sections": [
+    { "heading": "섹션 제목", "paragraphs": ["[안내/플레이스홀더 텍스트]"] },
+    { "heading": "섹션 제목", "table": { "headers": ["열1", "열2"], "rows": [["[값]", "[값]"]] } }
+  ],
+  "message": "어떤 양식을 만들었는지 한 줄 설명"
+}
+
+규칙:
+- info에는 작성일자·작성자 등 머리 정보 항목을 [플레이스홀더]로 구성
+- 본문 내용은 모두 [플레이스홀더] 형태로(실제 값 넣지 말 것)
+- 표가 어울리는 섹션은 table, 서술이 어울리면 paragraphs 사용
+- 한국 기업 문서 문화에 맞게 자연스럽게 구성`;
+}
+
+export function buildCustomEditPrompt(currentContentJson: string, instruction: string): string {
+  return `${PERSONA}
+
+---
+
+아래는 현재 맞춤 문서 양식의 구조(JSON)입니다.
+
+${currentContentJson}
+
+사용자 지시:
+${instruction}
+
+지시에 따라 위 구조를 수정하세요. 전체 구조는 유지하되 지시된 부분(내용 채우기 또는 구조 변경)을 반영합니다.
+
+반드시 아래 JSON 형식으로만 응답하세요. JSON 외의 다른 텍스트는 포함하지 마세요.
+
+{
+  "title": "문서 제목",
+  "info": [["항목명", "값"]],
+  "sections": [
+    { "heading": "섹션 제목", "paragraphs": ["..."] },
+    { "heading": "섹션 제목", "table": { "headers": ["열1"], "rows": [["값"]] } }
+  ],
+  "message": "사용자에게 보여줄 응답 메시지"
+}
+
+규칙:
+- 사용자가 정보를 제공하면 해당 [플레이스홀더]를 실제 값으로 채움
+- 사용자가 구조 변경을 요청하면 섹션/표를 조정
+- 제공되지 않은 항목은 기존 [플레이스홀더] 유지
+- message에 무엇을 했는지 간단히 안내`;
+}
+
 export function buildContentFillPrompt(
   reportType: ReportType,
   placeholders: string[],
@@ -104,6 +199,7 @@ ${userInput}
 반드시 아래 JSON 형식으로만 응답하세요. JSON 외의 다른 텍스트는 포함하지 마세요.
 
 {
+  "title": "이 보고서를 식별할 짧은 제목 (12자 이내, 예: '3월 강남지점 외근')",
   "replacements": {
     "[플레이스홀더 원본 텍스트]": "실제 채워넣을 내용",
     "[플레이스홀더 원본 텍스트]": "실제 채워넣을 내용"
@@ -112,10 +208,7 @@ ${userInput}
 }
 
 규칙:
-- replacements의 키는 위 플레이스홀더 목록의 텍스트를 대괄호 포함하여 정확히 그대로 사용
-- 자연스럽고 사무적인 어투로 작성 (실제 직장인이 작성한 것처럼)
-- 과도한 미사여구 금지, 간결하고 명확하게
-- 사용자가 제공하지 않은 정보는 합리적으로 추론하되 [확인 필요] 표시 추가
-- 모든 플레이스홀더에 대해 값을 제공할 것 (정보가 없으면 원본 유지하지 말고 적절한 예시를 넣되 [확인 필요] 표시)
-- message 필드에는 어떤 내용을 채웠는지 간략히 안내`;
+- title: 최근 프로젝트 목록용 짧고 구체적인 이름(날짜·장소·주제 등)
+- replacements 키는 위 플레이스홀더를 대괄호 포함 정확히 그대로 사용
+- 모든 플레이스홀더에 값 제공. 없는 정보는 합리적으로 추론하되 [확인 필요] 표시`;
 }

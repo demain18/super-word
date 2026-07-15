@@ -1,5 +1,7 @@
-import { ReportType, StyleType } from '@/types';
+import { ReportType, StyleType, CustomStyleSpec } from '@/types';
 import { AIDocumentContent } from './docx-builder';
+
+type StyleArg = StyleType | CustomStyleSpec | null;
 
 interface StyleSettings {
   font: string;
@@ -60,7 +62,23 @@ const STYLE_MAP: Record<StyleType | 'default', StyleSettings> = {
   },
 };
 
-function getStyle(styleType?: StyleType | null): StyleSettings {
+function getStyle(styleType?: StyleArg): StyleSettings {
+  if (styleType && typeof styleType === 'object') {
+    // 자유 스타일 사양 → 프리뷰 단위(px, # 포함 hex)로 변환
+    const hex = (c: string) => (c.startsWith('#') ? c : `#${c}`);
+    const px = (pt: number) => `${Math.round(pt * 1.333)}px`;
+    return {
+      font: `'${styleType.font}', 'Malgun Gothic', '맑은 고딕', sans-serif`,
+      titleSize: px(styleType.titlePt),
+      headingSize: px(styleType.headingPt),
+      bodySize: px(styleType.bodyPt),
+      titleColor: hex(styleType.titleColor),
+      headingColor: hex(styleType.headingColor),
+      accentColor: hex(styleType.accentColor),
+      borderColor: hex(styleType.borderColor),
+      headerBgColor: hex(styleType.headerBgColor),
+    };
+  }
   if (!styleType) return STYLE_MAP.default;
   return STYLE_MAP[styleType];
 }
@@ -338,11 +356,62 @@ const REPORT_TEMPLATES: Record<ReportType, { title: string; sections: TemplateSe
       { heading: '5. 향후 계획', content: '[차기 기간 목표 및 실행 계획을 기술하세요]' },
     ],
   },
+  quotation: {
+    title: '견적서',
+    sections: [
+      {
+        type: 'info',
+        table: {
+          rows: [
+            ['견적일자', '[작성일자를 입력하세요]'],
+            ['수신', '[거래처 / 수신처]'],
+            ['공급자', '[상호 / 대표자 / 사업자등록번호]'],
+            ['유효기간', '[견적 유효기간]'],
+          ],
+        },
+      },
+      {
+        heading: '1. 견적 내역',
+        table: {
+          headers: ['번호', '품명', '규격', '수량', '단가', '금액'],
+          rows: [
+            ['1', '[품명]', '[규격]', '[수량]', '[단가]', '[금액]'],
+            ['2', '[품명]', '[규격]', '[수량]', '[단가]', '[금액]'],
+            ['3', '[품명]', '[규격]', '[수량]', '[단가]', '[금액]'],
+          ],
+        },
+      },
+      { heading: '2. 합계 금액', content: '[공급가액 합계 / 부가세 / 총 합계 금액(원)을 기재하세요]' },
+      { heading: '3. 특이사항', content: '[결제 조건, 납기, 기타 참고사항을 기술하세요]' },
+    ],
+  },
+  'service-contract': {
+    title: '용역 계약서',
+    sections: [
+      {
+        type: 'info',
+        table: {
+          rows: [
+            ['계약일자', '[작성일자를 입력하세요]'],
+            ['갑 (발주자)', '[상호 / 대표자]'],
+            ['을 (수급자)', '[상호 / 대표자]'],
+            ['계약 기간', '[계약 시작일 ~ 종료일]'],
+          ],
+        },
+      },
+      { heading: '제1조 (목적)', content: '[본 계약의 목적을 기술하세요]' },
+      { heading: '제2조 (용역의 내용)', content: '[제공할 용역의 범위와 내용을 구체적으로 기술하세요]' },
+      { heading: '제3조 (계약 금액 및 지급)', content: '[총 계약 금액과 지급 시기·방법을 기술하세요]' },
+      { heading: '제4조 (계약 기간)', content: '[용역 수행 기간을 기술하세요]' },
+      { heading: '제5조 (양 당사자의 의무)', content: '[갑과 을의 권리·의무 사항을 기술하세요]' },
+      { heading: '제6조 (기타)', content: '[분쟁 해결, 비밀유지 등 기타 약정 사항을 기술하세요]' },
+    ],
+  },
 };
 
 export function generateTemplatePreviewHtml(
   reportType: ReportType,
-  styleType?: StyleType | null
+  styleType?: StyleArg
 ): string {
   const s = getStyle(styleType);
   const template = REPORT_TEMPLATES[reportType];
@@ -350,14 +419,15 @@ export function generateTemplatePreviewHtml(
 }
 
 export function generateAIPreviewHtml(
-  reportType: ReportType,
+  reportType: ReportType | null,
   aiContent: AIDocumentContent,
-  styleType?: StyleType | null
+  styleType?: StyleArg
 ): string {
   const s = getStyle(styleType);
   const sections: TemplateSection[] = [];
 
-  if (reportType !== 'meeting-minutes') {
+  // 커스텀 양식(reportType null)·회의록은 결재란을 넣지 않는다.
+  if (reportType && reportType !== 'meeting-minutes') {
     sections.push({ type: 'approval' });
   }
 
@@ -413,25 +483,20 @@ function wrapPage(content: string, s: StyleSettings): string {
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
-    background: #f5f5f5;
+    background: #e9ebee;
     display: flex;
     justify-content: center;
-    padding: 20px 0;
+    padding: 16px;
   }
+  /* 실제 A4(210x297mm) + 워드 기본 여백(1인치=25.4mm)에 맞춰 결과물과 격차를 줄인다.
+     내용이 적어도 최소 한 장(297mm)은 채워지고, 길면 자연히 길어진다. */
   .page {
     width: 210mm;
     min-height: 297mm;
     background: white;
-    padding: 40px 48px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    padding: 25.4mm;
+    box-shadow: 0 1px 10px rgba(0,0,0,0.14);
     font-family: ${s.font};
-  }
-  @media (max-width: 800px) {
-    .page {
-      width: 100%;
-      min-height: auto;
-      padding: 24px 20px;
-    }
   }
 </style>
 </head>
@@ -445,7 +510,7 @@ ${content}
 
 export function generateReplacedPreviewHtml(
   reportType: ReportType,
-  styleType: StyleType | null | undefined,
+  styleType: StyleArg | undefined,
   replacements: Record<string, string>
 ): string {
   const s = getStyle(styleType);

@@ -27,11 +27,13 @@ const Panel = styled.div`
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 500px;
+  height: 100%;
+  min-height: 0;
 
   @media (max-width: ${theme.breakpoints.tablet}) {
     flex: none;
     width: 100%;
+    height: auto;
     min-height: 400px;
   }
 `;
@@ -118,14 +120,11 @@ const EmptyIcon = styled.div`
 `;
 
 const PreviewFrame = styled.iframe`
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   border: none;
-  min-height: 600px;
-
-  @media (max-width: ${theme.breakpoints.tablet}) {
-    min-height: 450px;
-  }
 `;
 
 const StatusDot = styled.span<{ $active: boolean }>`
@@ -202,7 +201,7 @@ export default function PreviewPanel({
         {!displayHtml && !isLoading && (
           <EmptyState>
             <EmptyIcon>📄</EmptyIcon>
-            <div>보고서 종류를 선택하면</div>
+            <div>문서 양식을 선택하면</div>
             <div>여기에 미리보기가 표시됩니다</div>
           </EmptyState>
         )}

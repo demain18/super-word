@@ -1,14 +1,22 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import styled from '@emotion/styled';
+import { keyframes } from '@emotion/react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { theme } from '@/styles/theme';
+import { COMPANY_INFO } from '@/lib/company-info';
 import type { User } from '@supabase/supabase-js';
 
 interface NavbarProps {
   currentStep: 1 | 2 | 3 | null;
   user: User | null;
   onSignOut: () => void;
+  onSignIn?: () => void;
+  onStepNavigate?: (step: 1 | 2 | 3) => void;
+  /** 베이스 문서가 하나라도 생성됐는지 — true면 2·3단계로도 자유 이동 가능. */
+  baseReady?: boolean;
   credits?: number | null;
 }
 
@@ -60,11 +68,18 @@ const AvatarFallback = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  background: ${theme.colors.primary};
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
+  background: ${theme.colors.secondaryHover};
+  color: #d8dde3;
 `;
+
+/** 로그인 전·프로필 사진 없음 상태에서 쓰는 사람 실루엣 placeholder 아이콘. */
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden focusable="false">
+      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+    </svg>
+  );
+}
 
 const UserName = styled.span`
   font-size: 13px;
@@ -158,8 +173,54 @@ const CreditValue = styled.span`
   letter-spacing: 0.2px;
 `;
 
+// 이용권 숫자가 바뀔 때 위에서 살짝 내려오며 바뀌는 효과(클립 없이 → '회'와 정렬 유지)
+const rollDown = keyframes`
+  from { transform: translateY(-5px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+`;
+const Rolling = styled.span`
+  display: inline-block;
+  animation: ${rollDown} 280ms cubic-bezier(0.22, 0.61, 0.36, 1);
+`;
+
 function formatCount(n: number): string {
   return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+const blink = keyframes`
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+`;
+
+const Dots = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px;
+
+  span {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #6b3a00;
+    animation: ${blink} 1.2s infinite both;
+  }
+  span:nth-of-type(2) {
+    animation-delay: 0.2s;
+  }
+  span:nth-of-type(3) {
+    animation-delay: 0.4s;
+  }
+`;
+
+function CreditLoading() {
+  return (
+    <Dots aria-label="이용권 불러오는 중" role="status">
+      <span />
+      <span />
+      <span />
+    </Dots>
+  );
 }
 
 const SignOutButton = styled.button`
@@ -214,7 +275,7 @@ const SubNav = styled.div`
   gap: 0;
 `;
 
-const Step = styled.div<{ $active: boolean; $completed: boolean }>`
+const Step = styled.div<{ $active: boolean; $completed: boolean; $clickable: boolean }>`
   color: ${({ $active, $completed }) =>
     $active ? '#ffffff' : $completed ? theme.colors.primary : '#cccccc'};
   font-size: 13px;
@@ -224,7 +285,15 @@ const Step = styled.div<{ $active: boolean; $completed: boolean }>`
   display: flex;
   align-items: center;
   gap: 8px;
-  cursor: default;
+  border-radius: 4px;
+  cursor: ${({ $clickable }) => ($clickable ? 'pointer' : 'default')};
+  transition: background ${theme.transitions.fast};
+
+  ${({ $clickable }) =>
+    $clickable &&
+    `
+    &:hover { background: rgba(255, 255, 255, 0.08); }
+  `}
 
   ${({ $active }) =>
     $active &&
@@ -268,13 +337,178 @@ const StepDivider = styled.span`
   font-size: 16px;
 `;
 
+const RightArea = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`;
+
+const PolicyWrap = styled.div`
+  position: relative;
+`;
+
+const PolicyTrigger = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid #565959;
+  border-radius: 3px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color ${theme.transitions.fast}, background ${theme.transitions.fast};
+
+  &:hover {
+    border-color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
+  }
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 3px 2px rgba(228, 121, 17, 0.5);
+  }
+`;
+
+const Chevron = styled.span<{ $open: boolean }>`
+  display: inline-block;
+  font-size: 9px;
+  transition: transform ${theme.transitions.fast};
+  transform: rotate(${({ $open }) => ($open ? '180deg' : '0deg')});
+`;
+
+const PolicyPanel = styled.div`
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 300px;
+  background: #ffffff;
+  border: 1px solid ${theme.colors.cardBorder};
+  border-radius: 8px;
+  box-shadow: ${theme.shadows.cardHover};
+  padding: 10px;
+  z-index: 1100;
+  color: ${theme.colors.textPrimary};
+
+  @media (max-width: ${theme.breakpoints.mobile}) {
+    width: calc(100vw - 36px);
+    max-width: 300px;
+  }
+`;
+
+const PolicyItem = styled(Link)`
+  display: block;
+  padding: 9px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: ${theme.colors.textPrimary};
+  text-decoration: none;
+
+  &:hover {
+    background: ${theme.colors.backgroundLight};
+  }
+`;
+
+const PanelDivider = styled.div`
+  height: 1px;
+  background: ${theme.colors.cardBorder};
+  margin: 8px 4px;
+`;
+
+const BizBlock = styled.div`
+  padding: 2px 10px 6px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: ${theme.colors.textSecondary};
+`;
+
+const BizName = styled.div`
+  font-weight: 700;
+  color: ${theme.colors.textPrimary};
+  font-size: 12px;
+  margin-bottom: 3px;
+`;
+
+function PolicyMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <PolicyWrap ref={ref}>
+      <PolicyTrigger
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        약관·정책
+        <Chevron $open={open} aria-hidden>
+          ▾
+        </Chevron>
+      </PolicyTrigger>
+      {open && (
+        <PolicyPanel role="menu">
+          <PolicyItem href="/terms" role="menuitem" onClick={() => setOpen(false)}>
+            이용약관
+          </PolicyItem>
+          <PolicyItem href="/privacy" role="menuitem" onClick={() => setOpen(false)}>
+            개인정보처리방침
+          </PolicyItem>
+          <PolicyItem href="/refund" role="menuitem" onClick={() => setOpen(false)}>
+            환불 정책
+          </PolicyItem>
+          <PanelDivider />
+          <BizBlock>
+            <BizName>{COMPANY_INFO.name}</BizName>
+            대표자 {COMPANY_INFO.ceo} · 사업자등록번호 {COMPANY_INFO.bizRegNo}
+            <br />
+            통신판매업신고 {COMPANY_INFO.mailOrderNo}
+            <br />
+            {COMPANY_INFO.address}
+            <br />
+            전화 {COMPANY_INFO.phone}
+            <br />
+            이메일 {COMPANY_INFO.email}
+          </BizBlock>
+        </PolicyPanel>
+      )}
+    </PolicyWrap>
+  );
+}
+
 const STEPS = [
-  { num: 1, label: '보고서 선택' },
+  { num: 1, label: '양식 선택' },
   { num: 2, label: '양식 스타일' },
   { num: 3, label: '내용 작성' },
 ];
 
-export default function Navbar({ currentStep, user, onSignOut, credits }: NavbarProps) {
+export default function Navbar({
+  currentStep,
+  user,
+  onSignOut,
+  onSignIn,
+  onStepNavigate,
+  baseReady = false,
+  credits,
+}: NavbarProps) {
   const router = useRouter();
   const meta = (user?.user_metadata ?? {}) as {
     full_name?: string;
@@ -284,7 +518,6 @@ export default function Navbar({ currentStep, user, onSignOut, credits }: Navbar
   };
   const displayName = meta.full_name || meta.name || user?.email || '';
   const avatarUrl = meta.avatar_url || meta.picture || '';
-  const initial = (displayName || '?').trim().charAt(0).toUpperCase();
   const showSteps = currentStep !== null;
 
   return (
@@ -293,46 +526,82 @@ export default function Navbar({ currentStep, user, onSignOut, credits }: Navbar
         <Logo onClick={() => router.push('/')}>
           <LogoAccent>Super</LogoAccent>Word
         </Logo>
-        {user && (
+        <RightArea>
+          <PolicyMenu />
           <UserMenu>
-            <CreditBadge type="button" onClick={() => router.push('/point')} title="이용권 페이지로 이동">
-              <CreditLabel>사용권</CreditLabel>
+            <CreditBadge
+              type="button"
+              onClick={user ? () => router.push('/point') : onSignIn}
+              title={user ? '이용권 페이지로 이동' : '로그인하고 이용권 구매하기'}
+            >
+              <CreditLabel>이용권</CreditLabel>
               <CreditDivider aria-hidden />
-              <CreditValue>{formatCount(typeof credits === 'number' ? credits : 0)}회</CreditValue>
+              <CreditValue>
+                {user && typeof credits !== 'number' ? (
+                  <CreditLoading />
+                ) : (
+                  <>
+                    <Rolling key={typeof credits === 'number' ? credits : 0}>
+                      {formatCount(typeof credits === 'number' ? credits : 0)}
+                    </Rolling>
+                    회
+                  </>
+                )}
+              </CreditValue>
             </CreditBadge>
             <UserInfo>
               {avatarUrl ? (
                 <Avatar src={avatarUrl} alt={displayName} referrerPolicy="no-referrer" />
               ) : (
-                <AvatarFallback>{initial}</AvatarFallback>
+                <AvatarFallback aria-label="프로필">
+                  <PersonIcon />
+                </AvatarFallback>
               )}
-              <UserName>{displayName}</UserName>
+              {displayName && <UserName>{displayName}</UserName>}
             </UserInfo>
-            <SignOutButton type="button" onClick={onSignOut}>
-              로그아웃
-            </SignOutButton>
+            {user ? (
+              <SignOutButton type="button" onClick={onSignOut}>
+                로그아웃
+              </SignOutButton>
+            ) : (
+              <SignOutButton type="button" onClick={onSignIn}>
+                로그인
+              </SignOutButton>
+            )}
           </UserMenu>
-        )}
+        </RightArea>
       </Nav>
       {showSteps && (
         <SubNav>
-          {STEPS.map((step, i) => (
-            <span key={step.num} style={{ display: 'flex', alignItems: 'center' }}>
-              <Step
-                $active={currentStep === step.num}
-                $completed={currentStep! > step.num}
-              >
-                <StepNumber
+          {STEPS.map((step, i) => {
+            const completed = currentStep! > step.num;
+            // 1단계는 항상, 2·3단계는 베이스가 있으면 자유 이동. 현재 단계는 제외.
+            const clickable =
+              !!onStepNavigate &&
+              step.num !== currentStep &&
+              (step.num === 1 || baseReady);
+            return (
+              <span key={step.num} style={{ display: 'flex', alignItems: 'center' }}>
+                <Step
                   $active={currentStep === step.num}
-                  $completed={currentStep! > step.num}
+                  $completed={completed}
+                  $clickable={clickable}
+                  onClick={
+                    clickable
+                      ? () => onStepNavigate?.(step.num as 1 | 2 | 3)
+                      : undefined
+                  }
+                  title={clickable ? `${step.label} 단계로 돌아가기` : undefined}
                 >
-                  {currentStep! > step.num ? '✓' : step.num}
-                </StepNumber>
-                {step.label}
-              </Step>
-              {i < STEPS.length - 1 && <StepDivider>›</StepDivider>}
-            </span>
-          ))}
+                  <StepNumber $active={currentStep === step.num} $completed={completed}>
+                    {completed ? '✓' : step.num}
+                  </StepNumber>
+                  {step.label}
+                </Step>
+                {i < STEPS.length - 1 && <StepDivider>›</StepDivider>}
+              </span>
+            );
+          })}
         </SubNav>
       )}
     </>

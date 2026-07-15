@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import SiteFooter from '@/components/layout/SiteFooter';
+import BackButton from '@/components/common/BackButton';
 
 export const metadata = {
   title: '이용약관 | Super Word',
@@ -6,6 +8,7 @@ export const metadata = {
 
 export default function TermsPage() {
   return (
+    <>
     <main
       style={{
         maxWidth: 820,
@@ -17,9 +20,7 @@ export default function TermsPage() {
       }}
     >
       <div style={{ marginBottom: 18 }}>
-        <Link href="/" style={{ color: '#565959', fontSize: 13 }}>
-          ← 홈으로
-        </Link>
+        <BackButton />
       </div>
       <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 8 }}>이용약관</h1>
       <p style={{ color: '#565959', fontSize: 13, marginBottom: 28 }}>
@@ -101,5 +102,7 @@ export default function TermsPage() {
         본 약관은 서비스 운영상의 필요에 따라 변경될 수 있으며, 변경 시 본 페이지를 통해 사전 고지합니다.
       </p>
     </main>
+    <SiteFooter />
+    </>
   );
 }

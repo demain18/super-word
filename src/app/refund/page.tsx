@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import SiteFooter from '@/components/layout/SiteFooter';
+import BackButton from '@/components/common/BackButton';
 
 export const metadata = {
   title: '환불 정책 | Super Word',
@@ -6,6 +8,7 @@ export const metadata = {
 
 export default function RefundPage() {
   return (
+    <>
     <main
       style={{
         maxWidth: 820,
@@ -17,9 +20,7 @@ export default function RefundPage() {
       }}
     >
       <div style={{ marginBottom: 18 }}>
-        <Link href="/" style={{ color: '#565959', fontSize: 13 }}>
-          ← 홈으로
-        </Link>
+        <BackButton />
       </div>
       <h1 style={{ fontSize: 26, fontWeight: 800, marginBottom: 8 }}>환불 정책</h1>
       <p style={{ color: '#565959', fontSize: 13, marginBottom: 28 }}>
@@ -95,5 +96,7 @@ export default function RefundPage() {
         </p>
       </section>
     </main>
+    <SiteFooter />
+    </>
   );
 }

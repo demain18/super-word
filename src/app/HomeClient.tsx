@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import styled from '@emotion/styled';
 import { theme } from '@/styles/theme';
 import Navbar from '@/components/layout/Navbar';
@@ -9,7 +9,11 @@ import Step1ReportSelect from '@/components/steps/Step1ReportSelect';
 import Step2StyleSelect from '@/components/steps/Step2StyleSelect';
 import Step3ContentFill from '@/components/steps/Step3ContentFill';
 import PurchaseDialog from '@/components/PurchaseDialog';
+import AuthModal from '@/components/AuthModal';
+import Toast from '@/components/Toast';
+import RecentProjects from '@/components/RecentProjects';
 import { AppState, ReportType, StyleType, Message, VersionEntry } from '@/types';
+import type { ProjectSummary } from '@/lib/reports';
 import { createClient } from '@/lib/supabase/client';
 import { getTossClientKey } from '@/lib/toss-client';
 import type { User } from '@supabase/supabase-js';
@@ -18,30 +22,65 @@ const AppLayout = styled.div`
   display: flex;
   max-width: 1500px;
   margin: 0 auto;
-  padding: 20px 18px;
-  gap: 24px;
-  min-height: calc(100vh - 104px);
+  padding: 16px 18px;
+  gap: 20px;
+  height: calc(100vh - 104px);
+  overflow: hidden;
+  box-sizing: border-box;
 
   @media (max-width: ${theme.breakpoints.tablet}) {
     flex-direction: column;
+    height: auto;
+    overflow: visible;
     padding: 12px;
     gap: 16px;
   }
 `;
 
+// 단계 슬라이드 뷰포트: 가로 트랙을 translateX로 밀어 캐러셀처럼 전환한다.
 const OptionsPanel = styled.div`
   flex: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-height: calc(100vh - 104px);
-  overflow-y: auto;
-  padding-right: 4px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 
   @media (max-width: ${theme.breakpoints.tablet}) {
     flex: none;
     width: 100%;
-    max-height: none;
+    height: auto;
+    overflow: visible;
+  }
+`;
+
+// 슬라이드 사이 가로 간격(전환 중 패널 사이로 보이는 여백). 이동 거리도 이만큼 더해진다.
+const SLIDE_GAP = 40;
+
+const StepTrack = styled.div<{ $step: number }>`
+  display: flex;
+  gap: ${SLIDE_GAP}px;
+  width: 100%;
+  height: 100%;
+  transform: translateX(calc(${({ $step }) => -($step - 1)} * (100% + ${SLIDE_GAP}px)));
+  transition: transform 380ms ease-in-out;
+
+  @media (max-width: ${theme.breakpoints.tablet}) {
+    height: auto;
+  }
+`;
+
+const StepPane = styled.div`
+  flex: 0 0 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-right: 4px;
+
+  @media (max-width: ${theme.breakpoints.tablet}) {
+    height: auto;
+    overflow: visible;
   }
 `;
 
@@ -63,7 +102,7 @@ const LOADING_MESSAGES = {
   ],
   content: [
     '입력 정보를 분석하고 있습니다...',
-    '보고서 내용을 작성하고 있습니다...',
+    '양식 내용을 작성하고 있습니다...',
     '문서를 완성하고 있습니다...',
   ],
 };
@@ -72,6 +111,26 @@ type LoadingType = keyof typeof LOADING_MESSAGES;
 
 interface HomeClientProps {
   initialUser: User | null;
+  initialCredits: number | null;
+}
+
+// 로그인 리다이렉트 전후로 작업 상태를 보존하기 위한 로컬 임시저장 키.
+const DRAFT_KEY = 'sw_pending_draft';
+// 프로젝트를 브라우저 단위로 식별하는 게스트 ID(로그인과 무관, 영구 보관).
+const GUEST_KEY = 'sw_guest_id';
+
+function getGuestId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    let id = window.localStorage.getItem(GUEST_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      window.localStorage.setItem(GUEST_KEY, id);
+    }
+    return id;
+  } catch {
+    return '';
+  }
 }
 
 const initialAppState: AppState = {
@@ -86,15 +145,35 @@ const initialAppState: AppState = {
   versions: [],
   currentVersionIndex: 0,
   lockedVersionIndex: null,
+  aiContent: null,
+  styleSpec: null,
 };
 
-export default function HomeClient({ initialUser }: HomeClientProps) {
+export default function HomeClient({ initialUser, initialCredits }: HomeClientProps) {
   const [state, setState] = useState<AppState>(initialAppState);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(initialUser);
-  const [credits, setCredits] = useState<number | null>(null);
+  const [credits, setCredits] = useState<number | null>(initialCredits);
   const [purchaseDialog, setPurchaseDialog] = useState<{ open: boolean; reportId?: string }>({ open: false });
-  const isAuthenticated = !!user;
+  const [authModal, setAuthModal] = useState<{ open: boolean; reportId?: string }>({ open: false });
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // 표시/메시지 갱신만 담당. 자동 닫힘·나가기 애니메이션은 Toast가 직접 처리한다.
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+  }, []);
+  const hideToast = useCallback(() => setToast(null), []);
+
+  // 프로젝트는 브라우저(게스트) 단위로 식별 — 로그인과 무관하게 동일 목록을 본다.
+  // guestId는 호출 시점에 getGuestId()로 직접 읽는다(렌더 중 ref 접근 회피).
+
+  // 비동기 이용권 fetch가 로그아웃 이후 늦게 resolve돼 옛 값을 덮어쓰는 레이스를 막기 위한 가드.
+  const userRef = useRef<User | null>(initialUser);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -104,18 +183,13 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (user) return;
-    setState(initialAppState);
-    setPreviewHtml(null);
-    setCredits(null);
-  }, [user]);
-
   const refreshCredits = useCallback(async () => {
     try {
       const res = await fetch('/api/passes');
       if (!res.ok) return;
       const data = await res.json();
+      // 요청이 날아간 사이 로그아웃됐다면 옛 값을 반영하지 않는다.
+      if (!userRef.current) return;
       setCredits(data.totalCredits);
     } catch {
       // ignore
@@ -124,17 +198,121 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
 
   useEffect(() => {
     if (user) refreshCredits();
+    else setCredits(null);
   }, [user, refreshCredits]);
 
-  const handleSignIn = useCallback(async () => {
-    const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
+  const fetchProjects = useCallback(async () => {
+    const gid = getGuestId();
+    if (!gid) return;
+    setProjectsLoading(true);
+    try {
+      const res = await fetch('/api/projects', { headers: { 'x-guest-id': gid } });
+      if (!res.ok) {
+        setProjects([]);
+        return;
+      }
+      const data = await res.json();
+      setProjects(Array.isArray(data.projects) ? data.projects : []);
+    } catch {
+      // ignore
+    } finally {
+      setProjectsLoading(false);
+    }
   }, []);
 
+  // 브라우저(게스트) 단위 목록 — 로그인 무관하게 마운트 시 + 새 버전 생길 때 갱신.
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects, state.versions.length]);
+
+  // 좌측 "최근 프로젝트"에서 세션 선택 → 그 세션의 버전들을 복원한다.
+  const handleOpenProject = useCallback(async (sessionId: string) => {
+    try {
+      const res = await fetch(`/api/projects?sessionId=${encodeURIComponent(sessionId)}`, {
+        headers: { 'x-guest-id': getGuestId() },
+      });
+      if (!res.ok) throw new Error('프로젝트를 불러오지 못했습니다.');
+      const data = await res.json();
+      const rows = (data.versions || []) as Array<{
+        id: string;
+        version: number;
+        label: string | null;
+        reportType: string | null;
+        style: string | null;
+        previewHtml: string | null;
+        aiContent: unknown;
+      }>;
+      if (!rows.length) return;
+
+      const versions: VersionEntry[] = rows.map((r) => ({
+        version: r.version,
+        reportId: r.id,
+        previewHtml: r.previewHtml ?? '',
+        label: r.label ?? `버전 ${r.version}`,
+      }));
+      const reportType = (rows.find((r) => r.reportType)?.reportType ?? null) as ReportType | null;
+      const styles = rows.map((r) => r.style).filter(Boolean) as StyleType[];
+      const latestStyle = styles.length ? styles[styles.length - 1] : null;
+      const lastIdx = versions.length - 1;
+      // 내용 작성까지 진행됐던 프로젝트는 3단계(내용)로, 그 외엔 2단계(스타일)로 복원한다.
+      const reachedContent = rows.some((r) => (r.label ?? '').includes('내용'));
+      const restoreStep: 1 | 2 | 3 = reachedContent ? 3 : 2;
+
+      setState({
+        ...initialAppState,
+        currentStep: restoreStep,
+        selectedReport: reportType,
+        selectedStyle: latestStyle,
+        styleHistory: latestStyle ? [latestStyle] : [],
+        sessionId,
+        versions,
+        currentVersionIndex: lastIdx,
+        lockedVersionIndex: restoreStep === 3 ? lastIdx : null,
+        aiContent: (rows[lastIdx]?.aiContent ?? null) as AppState['aiContent'],
+        styleSpec: null,
+      });
+      setPreviewHtml(versions[lastIdx].previewHtml || null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '프로젝트를 불러오지 못했습니다.');
+    }
+  }, []);
+
+  const handleNewProject = useCallback(() => {
+    setState(initialAppState);
+    setPreviewHtml(null);
+  }, []);
+
+  // 로그인 의사: 진행 중 작업을 stash(복귀 후 다운로드 이어가기)한 뒤 구글 로그인으로 이동.
+  // 프로젝트는 브라우저(게스트) 단위라 로그인해도 목록은 그대로 — 이관/claim 불필요.
+  const handleLoginIntent = useCallback(
+    async (pendingReportId?: string) => {
+      try {
+        window.localStorage.setItem(
+          DRAFT_KEY,
+          JSON.stringify({ state, previewHtml, pendingReportId: pendingReportId ?? null })
+        );
+      } catch {
+        // 저장 실패는 무시 — 로그인 자체는 진행
+      }
+      const supabase = createClient();
+      await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          // 항상 구글 계정 선택 화면을 띄운다(이미 로그인된 계정으로 자동 통과 방지).
+          queryParams: { prompt: 'select_account' },
+        },
+      });
+    },
+    [state, previewHtml]
+  );
+
   const handleSignOut = useCallback(async () => {
+    // 로그아웃 즉시 UI를 로그아웃 상태로 전환(잔여 이용권 수치가 잠깐 남는 현상 방지).
+    // userRef도 동기적으로 비워, 진행 중이던 fetch가 늦게 돌아와도 옛 값을 덮지 못하게 한다.
+    userRef.current = null;
+    setUser(null);
+    setCredits(null);
     const supabase = createClient();
     await supabase.auth.signOut();
   }, []);
@@ -166,7 +344,10 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
         const currentVersion = state.versions.length;
         const res = await fetch('/api/generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-guest-id': getGuestId(),
+          },
           body: JSON.stringify({
             ...body,
             sessionId: state.sessionId || undefined,
@@ -196,6 +377,8 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
             loadingMessage: '',
             versions: newVersions,
             currentVersionIndex: newVersions.length - 1,
+            // 커스텀 양식이면 응답에 aiContent가 있고, 프리셋이면 없으므로 null로 초기화된다.
+            aiContent: (data.aiContent ?? null) as AppState['aiContent'],
           };
         });
 
@@ -250,48 +433,67 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
   };
 
   const handleStep1Next = async () => {
-    if (!isAuthenticated || !state.selectedReport) return;
+    if (!state.selectedReport) return;
 
+    // 로그인 없이 바로 진행 — 프로젝트는 브라우저(게스트) 단위로 저장된다.
     const result = await callGenerateApi(
       { action: 'generate', reportType: state.selectedReport },
       'generate'
     );
 
     if (result) {
-      setState((prev) => ({ ...prev, currentStep: 2 }));
+      setState((prev) => ({ ...prev, currentStep: 2, selectedStyle: null, styleSpec: null }));
     }
   };
 
+  // 양식 선택 단계의 프롬프트로 맞춤 양식을 생성한다(프리셋 없이). 성공 여부를 반환한다.
+  const handleCustomGenerate = async (prompt: string): Promise<boolean> => {
+    if (!prompt.trim()) return false;
+    const result = await callGenerateApi({ action: 'custom-generate', prompt }, 'generate');
+    if (result) {
+      setState((prev) => ({
+        ...prev,
+        selectedReport: null,
+        currentStep: 2,
+        selectedStyle: null,
+        styleSpec: null,
+      }));
+      return true;
+    }
+    return false;
+  };
+
   const handleStyleSelect = async (style: StyleType) => {
-    const result = await callGenerateApi(
-      {
-        action: 'style',
-        reportType: state.selectedReport,
-        style,
-        styleHistory: state.styleHistory,
-      },
-      'style'
-    );
+    const body = state.aiContent
+      ? { action: 'custom-style', aiContent: state.aiContent, style }
+      : {
+          action: 'style',
+          reportType: state.selectedReport,
+          style,
+          styleHistory: state.styleHistory,
+        };
+    const result = await callGenerateApi(body, 'style');
 
     if (result) {
       setState((prev) => ({
         ...prev,
         selectedStyle: style,
         styleHistory: [...prev.styleHistory, style],
+        styleSpec: null,
       }));
     }
   };
 
-  const handleCustomFeedback = async (feedback: string) => {
-    await callGenerateApi(
-      {
-        action: 'custom-feedback',
-        reportType: state.selectedReport,
-        customFeedback: feedback,
-        currentStyle: state.selectedStyle,
-      },
-      'custom-feedback'
-    );
+  // 양식 스타일 단계의 자유 입력 → 색·폰트 등 스타일을 프롬프트로 지정(custom-style-prompt).
+  const handleStylePrompt = async (prompt: string) => {
+    if (!prompt.trim()) return;
+    const body = state.aiContent
+      ? { action: 'style-prompt', prompt, aiContent: state.aiContent }
+      : { action: 'style-prompt', prompt, reportType: state.selectedReport };
+    const result = await callGenerateApi(body, 'custom-feedback');
+    if (result?.styleSpec) {
+      setState((prev) => ({ ...prev, styleSpec: result.styleSpec, selectedStyle: null }));
+    }
   };
 
   const handleStep2Next = () => {
@@ -313,6 +515,26 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
     }
   };
 
+  // 상단 단계 클릭 → 자유 이동. 베이스(문서)만 있으면 2·3 어디로든 이동 가능.
+  // 3단계(내용)로 가면 현재 버전을 고정하고, 1·2단계로 가면 고정 해제 + 대화 초기화.
+  const handleStepNavigate = (step: 1 | 2 | 3) => {
+    if (step === state.currentStep) return;
+    if (step === 3) {
+      setState((prev) => ({
+        ...prev,
+        currentStep: 3,
+        lockedVersionIndex: prev.currentVersionIndex,
+      }));
+    } else {
+      setState((prev) => ({
+        ...prev,
+        currentStep: step,
+        lockedVersionIndex: null,
+        messages: [],
+      }));
+    }
+  };
+
   const handleSendMessage = async (message: string) => {
     const newMessages: Message[] = [
       ...state.messages,
@@ -320,15 +542,21 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
     ];
     setState((prev) => ({ ...prev, messages: newMessages }));
 
-    const result = await callGenerateApi(
-      {
-        action: 'content',
-        reportType: state.selectedReport,
-        userInput: message,
-        currentStyle: state.selectedStyle,
-      },
-      'content'
-    );
+    const activeStyle = state.styleSpec ?? state.selectedStyle;
+    const body = state.aiContent
+      ? {
+          action: 'custom-edit',
+          aiContent: state.aiContent,
+          instruction: message,
+          currentStyle: activeStyle,
+        }
+      : {
+          action: 'content',
+          reportType: state.selectedReport,
+          userInput: message,
+          currentStyle: activeStyle,
+        };
+    const result = await callGenerateApi(body, 'content');
 
     if (result?.message) {
       setState((prev) => ({
@@ -357,30 +585,46 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
 
   const requestDownload = useCallback(
     async (reportId: string): Promise<boolean> => {
+      // 다운로드(결제)는 로그인 필요 — 미로그인 시 로그인 모달.
+      if (!userRef.current) {
+        setAuthModal({ open: true, reportId });
+        return false;
+      }
+      // 누른 즉시 준비 토스트(실패/이용권부족이면 아래에서 거둠).
+      showToast('다운로드를 준비하고 있습니다…');
       try {
         const res = await fetch('/api/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reportId }),
+          body: JSON.stringify({ reportId, guestId: getGuestId() }),
         });
         const data = await res.json();
         if (res.status === 409 && data.error === 'NO_CREDITS') {
+          setToast(null);
           setCredits(typeof data.creditsRemaining === 'number' ? data.creditsRemaining : 0);
           setPurchaseDialog({ open: true, reportId });
           return false;
         }
         if (!res.ok) {
+          setToast(null);
           throw new Error(data.error || '다운로드 실패');
         }
+        // 차감 여부에 따라 메시지 갱신: 신규는 소모, 이미 받은 건 재다운로드(차감 없음).
+        showToast(
+          data.consumed
+            ? '이용권 1장을 소모했습니다. 다운로드가 시작됩니다.'
+            : '이미 받은 양식이에요. 이용권 차감 없이 다시 받습니다.'
+        );
         triggerBlobDownload(data.signedUrl, data.filename);
         if (typeof data.creditsRemaining === 'number') setCredits(data.creditsRemaining);
         return true;
       } catch (e) {
+        setToast(null);
         alert(e instanceof Error ? e.message : '다운로드에 실패했습니다.');
         return false;
       }
     },
-    [triggerBlobDownload]
+    [triggerBlobDownload, showToast]
   );
 
   const handleDownloadVersion = (index: number) => {
@@ -408,6 +652,42 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
     })();
   }, [user, refreshCredits, requestDownload]);
 
+  // 로그인 리다이렉트 복귀: 로그인되면 stash한 작업을 복원하고, 누르던 다운로드를 이어간다.
+  // (프로젝트는 게스트 단위라 목록은 그대로 — 별도 이관 없음.)
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || !user) return;
+    if (typeof window === 'undefined') return;
+    restoredRef.current = true;
+
+    let draftRaw: string | null = null;
+    try {
+      draftRaw = window.localStorage.getItem(DRAFT_KEY);
+      if (draftRaw) window.localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      draftRaw = null;
+    }
+    if (!draftRaw) return;
+    try {
+      const draft = JSON.parse(draftRaw) as {
+        state?: AppState;
+        previewHtml?: string | null;
+        pendingReportId?: string | null;
+      };
+      if (draft.state) setState(draft.state);
+      if (typeof draft.previewHtml === 'string') setPreviewHtml(draft.previewHtml);
+      if (draft.pendingReportId) {
+        const rid = draft.pendingReportId;
+        void (async () => {
+          await refreshCredits();
+          await requestDownload(rid);
+        })();
+      }
+    } catch {
+      // 손상된 draft는 무시
+    }
+  }, [user, refreshCredits, requestDownload]);
+
   const isStep3 = state.currentStep === 3;
   let tossClientKey = '';
   try {
@@ -422,9 +702,19 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
         currentStep={state.currentStep}
         user={user}
         onSignOut={handleSignOut}
+        onSignIn={() => handleLoginIntent()}
+        onStepNavigate={handleStepNavigate}
+        baseReady={state.versions.length > 0}
         credits={credits}
       />
       <AppLayout>
+        <RecentProjects
+          projects={projects}
+          loading={projectsLoading}
+          activeSessionId={state.sessionId || null}
+          onOpen={handleOpenProject}
+          onNewProject={handleNewProject}
+        />
         <PreviewPanel
           previewHtml={previewHtml}
           isLoading={state.isLoading}
@@ -436,34 +726,37 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
           locked={isStep3}
         />
         <OptionsPanel>
-          {state.currentStep === 1 && (
-            <Step1ReportSelect
-              selectedReport={state.selectedReport}
-              onSelect={handleReportSelect}
-              onNext={handleStep1Next}
-              isAuthenticated={isAuthenticated}
-              onSignIn={handleSignIn}
-            />
-          )}
-          {state.currentStep === 2 && (
-            <Step2StyleSelect
-              onStyleSelect={handleStyleSelect}
-              onCustomFeedback={handleCustomFeedback}
-              onNext={handleStep2Next}
-              onBack={() => handleBack(1)}
-              onDownload={handleDownloadCurrent}
-              isLoading={state.isLoading}
-            />
-          )}
-          {state.currentStep === 3 && (
-            <Step3ContentFill
-              messages={state.messages}
-              onSendMessage={handleSendMessage}
-              onBack={() => handleBack(2)}
-              onDownload={handleDownloadCurrent}
-              isLoading={state.isLoading}
-            />
-          )}
+          <StepTrack $step={state.currentStep}>
+            <StepPane inert={state.currentStep !== 1 ? true : undefined}>
+              <Step1ReportSelect
+                selectedReport={state.selectedReport}
+                onSelect={handleReportSelect}
+                onNext={handleStep1Next}
+                onCustomGenerate={handleCustomGenerate}
+                isAuthenticated
+                onSignIn={() => handleLoginIntent()}
+              />
+            </StepPane>
+            <StepPane inert={state.currentStep !== 2 ? true : undefined}>
+              <Step2StyleSelect
+                onStyleSelect={handleStyleSelect}
+                onCustomFeedback={handleStylePrompt}
+                onNext={handleStep2Next}
+                onBack={() => handleBack(1)}
+                onDownload={handleDownloadCurrent}
+                isLoading={state.isLoading}
+              />
+            </StepPane>
+            <StepPane inert={state.currentStep !== 3 ? true : undefined}>
+              <Step3ContentFill
+                messages={state.messages}
+                onSendMessage={handleSendMessage}
+                onBack={() => handleBack(2)}
+                onDownload={handleDownloadCurrent}
+                isLoading={state.isLoading}
+              />
+            </StepPane>
+          </StepTrack>
         </OptionsPanel>
       </AppLayout>
       {user && tossClientKey && (
@@ -475,6 +768,12 @@ export default function HomeClient({ initialUser }: HomeClientProps) {
           onClose={() => setPurchaseDialog({ open: false })}
         />
       )}
+      <AuthModal
+        open={authModal.open}
+        onClose={() => setAuthModal({ open: false })}
+        onGoogle={() => handleLoginIntent(authModal.reportId)}
+      />
+      {toast && <Toast message={toast} onClose={hideToast} />}
     </>
   );
 }

@@ -17,7 +17,9 @@ import {
   VerticalAlign,
   ShadingType,
 } from 'docx';
-import { ReportType, StyleType } from '@/types';
+import { ReportType, StyleType, CustomStyleSpec } from '@/types';
+
+type StyleArg = StyleType | CustomStyleSpec | null;
 
 interface DocumentContent {
   title: string;
@@ -97,7 +99,22 @@ interface StyleSettings {
   headerBgColor: string;
 }
 
-function getStyle(styleType?: StyleType | null): StyleSettings {
+function getStyle(styleType?: StyleArg): StyleSettings {
+  if (styleType && typeof styleType === 'object') {
+    // 자유 스타일 사양 → docx 단위(half-pt, #없는 hex)로 변환
+    const strip = (c: string) => c.replace('#', '');
+    return {
+      titleSize: Math.round(styleType.titlePt * 2),
+      headingSize: Math.round(styleType.headingPt * 2),
+      bodySize: Math.round(styleType.bodyPt * 2),
+      font: styleType.font,
+      titleColor: strip(styleType.titleColor),
+      headingColor: strip(styleType.headingColor),
+      accentColor: strip(styleType.accentColor),
+      borderColor: strip(styleType.borderColor),
+      headerBgColor: strip(styleType.headerBgColor),
+    };
+  }
   if (!styleType) return STYLE_CONFIG.default;
   return STYLE_CONFIG[styleType];
 }
@@ -271,7 +288,8 @@ function createDataTable(data: TableData, style: StyleSettings): Table {
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    // 균등 분할(FIXED) 대신 내용 기반 자동 맞춤 → 긴 텍스트 컬럼이 적절히 넓어진다.
+    layout: TableLayoutType.AUTOFIT,
     rows: tableRows,
   });
 }
@@ -521,11 +539,70 @@ const REPORT_TEMPLATES: Record<ReportType, (style: StyleSettings) => DocumentCon
       },
     ],
   }),
+
+  quotation: () => ({
+    title: '견적서',
+    sections: [
+      {
+        type: 'info',
+        table: {
+          rows: [
+            ['견적일자', '[작성일자를 입력하세요]'],
+            ['수신', '[거래처 / 수신처]'],
+            ['공급자', '[상호 / 대표자 / 사업자등록번호]'],
+            ['유효기간', '[견적 유효기간]'],
+          ],
+        },
+      },
+      {
+        heading: '1. 견적 내역',
+        table: {
+          headers: ['번호', '품명', '규격', '수량', '단가', '금액'],
+          rows: [
+            ['1', '[품명]', '[규격]', '[수량]', '[단가]', '[금액]'],
+            ['2', '[품명]', '[규격]', '[수량]', '[단가]', '[금액]'],
+            ['3', '[품명]', '[규격]', '[수량]', '[단가]', '[금액]'],
+          ],
+        },
+      },
+      {
+        heading: '2. 합계 금액',
+        content: '[공급가액 합계 / 부가세 / 총 합계 금액(원)을 기재하세요]',
+      },
+      {
+        heading: '3. 특이사항',
+        content: '[결제 조건, 납기, 기타 참고사항을 기술하세요]',
+      },
+    ],
+  }),
+
+  'service-contract': () => ({
+    title: '용역 계약서',
+    sections: [
+      {
+        type: 'info',
+        table: {
+          rows: [
+            ['계약일자', '[작성일자를 입력하세요]'],
+            ['갑 (발주자)', '[상호 / 대표자]'],
+            ['을 (수급자)', '[상호 / 대표자]'],
+            ['계약 기간', '[계약 시작일 ~ 종료일]'],
+          ],
+        },
+      },
+      { heading: '제1조 (목적)', content: '[본 계약의 목적을 기술하세요]' },
+      { heading: '제2조 (용역의 내용)', content: '[제공할 용역의 범위와 내용을 구체적으로 기술하세요]' },
+      { heading: '제3조 (계약 금액 및 지급)', content: '[총 계약 금액과 지급 시기·방법을 기술하세요]' },
+      { heading: '제4조 (계약 기간)', content: '[용역 수행 기간을 기술하세요]' },
+      { heading: '제5조 (양 당사자의 의무)', content: '[갑과 을의 권리·의무 사항을 기술하세요]' },
+      { heading: '제6조 (기타)', content: '[분쟁 해결, 비밀유지 등 기타 약정 사항을 기술하세요]' },
+    ],
+  }),
 };
 
 export function buildDocument(
   reportType: ReportType,
-  styleType?: StyleType | null,
+  styleType?: StyleArg,
 ): Document {
   const style = getStyle(styleType);
   const template = REPORT_TEMPLATES[reportType](style);
@@ -658,9 +735,9 @@ export function buildDocument(
 }
 
 export function buildDocumentFromAI(
-  reportType: ReportType,
+  reportType: ReportType | null,
   aiContent: AIDocumentContent,
-  styleType?: StyleType | null,
+  styleType?: StyleArg,
 ): Document {
   const style = getStyle(styleType);
   const children: (Paragraph | Table)[] = [];
@@ -682,8 +759,8 @@ export function buildDocumentFromAI(
     })
   );
 
-  // Approval table if applicable
-  if (reportType !== 'meeting-minutes') {
+  // Approval table if applicable (커스텀 양식·회의록은 제외)
+  if (reportType && reportType !== 'meeting-minutes') {
     children.push(createApprovalTable(style));
     children.push(new Paragraph({ spacing: { after: 300 }, children: [] }));
   }
@@ -837,7 +914,7 @@ export function extractPlaceholders(reportType: ReportType): string[] {
 
 export function buildDocumentWithReplacements(
   reportType: ReportType,
-  styleType: StyleType | null | undefined,
+  styleType: StyleArg | undefined,
   replacements: Record<string, string>,
 ): Document {
   const style = getStyle(styleType);

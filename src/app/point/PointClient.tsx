@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import styled from '@emotion/styled';
 import { theme } from '@/styles/theme';
 import Navbar from '@/components/layout/Navbar';
+import SiteFooter from '@/components/layout/SiteFooter';
 import Button from '@/components/common/Button';
 import { createClient } from '@/lib/supabase/client';
 import { PACKAGE_LIST, PACKAGES, type PackageCode } from '@/lib/passes-config';
@@ -439,7 +440,7 @@ export default function PointClient({
                   return (
                     <tr key={row.id}>
                       <td>{formatDateTime(row.created_at)}</td>
-                      <td>{r?.label || r?.filename || '—'}</td>
+                      <td>{r?.title || r?.label || r?.filename || '—'}</td>
                       <td>v{r?.version ?? '—'}</td>
                       <td>{row.credits_used}회</td>
                       <td style={{ textAlign: 'right' }}>
@@ -468,10 +469,12 @@ export default function PointClient({
           • 보유 회수가 부족할 경우 다운로드 시점에 이용권 구매 안내가 표시됩니다.
           <NoticeLinks>
             <Link href="/terms">이용약관</Link>
+            <Link href="/privacy">개인정보처리방침</Link>
             <Link href="/refund">환불 정책</Link>
           </NoticeLinks>
         </NoticeBox>
       </Page>
+      <SiteFooter />
     </>
   );
 }
